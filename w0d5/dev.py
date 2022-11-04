@@ -357,46 +357,8 @@ b = multiply_forward(a, b)
 grad_tracking_enabled = True
 assert not b.requires_grad, "should not require grad if grad tracking globally disabled"
 assert b.recipe is None, "should not create recipe if grad tracking globally disabled"
+
 # %%
-# def wrap_forward_fn(numpy_func: Callable, is_differentiable=True) -> Callable:
-#     '''
-#     numpy_func: function. It takes any number of positional arguments, some of which may be NumPy arrays, and any number of keyword arguments which we aren't allowing to be NumPy arrays at present. It returns a single NumPy array.
-#     is_differentiable: if True, numpy_func is differentiable with respect to some input argument, so we may need to track information in a Recipe. If False, we definitely don't need to track information.
-
-#     Return: function. It has the same signature as numpy_func, except wherever there was a NumPy array, this has a Tensor instead.
-#     '''
-   
-#     def tensor_func(*args: Any, **kwargs: Any) -> Tensor:
-
-#         array_args = []
-#         print(numpy_func.__name__)
-#         print([type(a) for a in args])
-#         print([type(a) for a in kwargs.values()])
-
-#         # for a in args:
-#         #     if type(a) is Tensor:
-#         #         array_args.append(a.array)
-#         #     else:
-#         #         array_args.append(a)
-
-#         array_args = tuple(array_args)
-
-#         array_args = tuple([(a.array if isinstance(a, Tensor) else a) for a in args])
-#         out_array = numpy_func(*array_args, **kwargs)
-
-#         requires_grad = grad_tracking_enabled and is_differentiable and any([
-#             (isinstance(a, Tensor) and (a.requires_grad or a.recipe is not None)) for a in args
-#         ])
-
-#         y = Tensor(out_array, requires_grad)
-
-#         if requires_grad:
-#             parents = {i: a for i, a in enumerate(args) if isinstance(a, Tensor)}
-#             y.recipe = Recipe(numpy_func, array_args, kwargs, parents)
-        
-#         return y
-
-#     return tensor_func
 def wrap_forward_fn(numpy_func: Callable, is_differentiable=True) -> Callable:
     """
     numpy_func: function. It takes any number of positional arguments, some of which may be NumPy arrays, and any number of keyword arguments which we aren't allowing to be NumPy arrays at present. It returns a single NumPy array.
@@ -486,29 +448,6 @@ def topological_sort(node: Node, get_children_fn: Callable) -> list[Any]:
 
     visit(node)
     return result
-
-# def topological_sort(node: Union[Node, Tensor], get_children_fn: Callable) -> list[Any]: 
-#     temporary_marks = set()
-#     permanent_marks = set()
-
-#     def topological_sort_recursion(node: Union[Node, Tensor], get_children_fn: Callable) -> list[Any]:
-#         '''
-#         Return a list of node's descendants in reverse topological order from future to past.
-#         Should raise an error if the graph with `node` as root is not in fact acyclic.
-#         '''
-#         if node in temporary_marks:
-#             raise Exception("Seems like your graph is cyclic")
-#         if node in permanent_marks:
-#             return []
-#         temporary_marks.add(node)
-#         nested_descendants = [topological_sort_recursion(node, get_children_fn) for node in get_children_fn(node)]
-#         descendants = [descendant for nest in nested_descendants for descendant in nest]
-#         temporary_marks.remove(node)
-#         permanent_marks.add(node)
-#         descendants.append(node)
-#         return descendants
-
-#     return topological_sort_recursion(node, get_children_fn)
 
 def get_children(node: Node) -> list[Node]:
     return node.children
@@ -619,7 +558,6 @@ def backprop(end_node: Tensor, end_grad: Optional[Tensor] = None) -> None:
         outgrad = grads.pop(node)
         # We only store the gradients if this node is a leaf (see the is_leaf property of Tensor)
         if node.is_leaf:
-            print("Backprop shapes:", node.array.shape)
             # Add the gradient to this node's grad (need to deal with special case grad=None)
             if node.grad is None:
                 node.grad = Tensor(outgrad)
@@ -738,8 +676,7 @@ utils.test_expand_negative_length(Tensor)
 
 def sum_back(grad_out: Arr, out: Arr, x: Arr, dim=None, keepdim=False):
     """Basic idea: repeat grad_out over the dims along which x was summed"""
-    
-    # print(dim)
+
     # # If grad_out is a scalar, we need to make it a tensor (so we can expand it later)
     # if not isinstance(grad_out, Arr):
     #     grad_out = Tensor(grad_out)
@@ -1028,72 +965,34 @@ print("Manually verify that the repr looks reasonable:")
 print(mod)
 
 
-# %% 
 class Linear(Module):
     def __init__(self, in_features: int, out_features: int, bias=True):
-        """A simple linear (technically, affine) transformation.
+        '''A simple linear (technically, affine) transformation.
 
         The fields should be named `weight` and `bias` for compatibility with PyTorch.
         If `bias` is False, set `self.bias` to None.
-        """
+        '''
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
-        
-        # sf needs to be a float
-        sf = in_features ** -0.5
-        
-        weight = sf * Tensor(2 * np.random.rand(out_features, in_features) - 1)
-        self.weight = Parameter(weight)
-        
-        if bias:
-            bias = sf * Tensor(2 * np.random.rand(out_features,) - 1)
-            self.bias = Parameter(bias)
-        else:
-            self.bias = None
-
+        weight = np.random.randn(out_features, in_features) / np.sqrt(in_features)
+        self.weight = Parameter(Tensor(weight))
+        bias_par = np.random.randn(out_features,)/np.sqrt(in_features)
+        self.bias = Parameter(Tensor(bias_par)) if bias else None
+        # CHECK BIAS RANGE
     def forward(self, x: Tensor) -> Tensor:
-        """
+        '''
         x: shape (*, in_features)
         Return: shape (*, out_features)
-        """
+        '''
         out = x @ self.weight.permute((1, 0))
-        if self.bias is not None: 
-            out = out + self.bias
+        if self.bias is not None:
+            out = out + self.bias 
+
         return out
 
     def extra_repr(self) -> str:
-        # note, we need to use `self.bias is not None`, because `self.bias` is either a tensor or None, not bool
-        return f"in_features={self.in_features}, out_features={self.out_features}, bias={self.bias is not None}"
-
-
-
-# class Linear(Module):
-#     def __init__(self, in_features: int, out_features: int, bias=True):
-#         '''A simple linear (technically, affine) transformation.
-
-#         The fields should be named `weight` and `bias` for compatibility with PyTorch.
-#         If `bias` is False, set `self.bias` to None.
-#         '''
-#         super().__init__()
-#         self.in_features = in_features
-#         self.out_features = out_features
-#         self.weight = Parameter(Tensor(np.random.rand(out_features, in_features)-1)/np.sqrt(in_features))
-#         self.bias = Parameter(Tensor((np.random.rand(out_features,)-1)/np.sqrt(in_features))) if bias else None
-#         # CHECK BIAS RANGE
-#     def forward(self, x: Tensor) -> Tensor:
-#         '''
-#         x: shape (*, in_features)
-#         Return: shape (*, out_features)
-#         '''
-#         out = x @ self.weight.permute((1, 0))
-#         if self.bias is not None:
-#             out = out + self.bias 
-
-#         return out
-
-#     def extra_repr(self) -> str:
-#         return f"in_features {self.in_features}, out_features {self.out_features}. bias {self.bias is not None}"
+        return f"in_features {self.in_features}, out_features {self.out_features}. bias {self.bias is not None}"
 
 class MLP(Module):
     def __init__(self):
@@ -1108,8 +1007,6 @@ class MLP(Module):
         x = relu(self.linear2(x))
         x = self.output(x)
         return x
-
-
 
 # %%
 from fancy_einsum import einsum
@@ -1168,11 +1065,8 @@ class SGD:
     def step(self) -> None:
         with NoGrad():
             for (i, p) in enumerate(self.params):
-                print(p.shape)
                 assert isinstance(p.grad, Tensor)
                 p.add_(p.grad, -self.lr)
-
-
 
 def cross_entropy(logits: Tensor, true_labels: Tensor) -> Tensor:
     """Like torch.nn.functional.cross_entropy with reduction='none'.
@@ -1224,7 +1118,7 @@ def test(model, test_loader):
         )
     )
 # %%
-num_epochs = 5
+num_epochs = 200
 model = MLP()
 start = time.time()
 optimizer = SGD(model.parameters(), 0.01)
