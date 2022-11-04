@@ -326,6 +326,8 @@ b = log_forward(a)
 grad_tracking_enabled = True
 assert not b.requires_grad, "should not require grad if grad tracking globally disabled"
 assert b.recipe is None, "should not create recipe if grad tracking globally disabled"
+
+
 # %%
 def multiply_forward(a: Union[Tensor, int], b: Union[Tensor, int]) -> Tensor:
     a_requires_grad = isinstance(a, Tensor) and a.requires_grad
@@ -404,7 +406,7 @@ def wrap_forward_fn(numpy_func: Callable, is_differentiable=True) -> Callable:
     """
 
     def tensor_func(*args: Any, **kwargs: Any) -> Tensor:
-        
+
         arg_arrays = [(a.array if isinstance(a, Tensor) else a) for a in args]
         out_arr = numpy_func(*arg_arrays, **kwargs)
         
@@ -617,6 +619,7 @@ def backprop(end_node: Tensor, end_grad: Optional[Tensor] = None) -> None:
         outgrad = grads.pop(node)
         # We only store the gradients if this node is a leaf (see the is_leaf property of Tensor)
         if node.is_leaf:
+            print("Backprop shapes:", node.array.shape)
             # Add the gradient to this node's grad (need to deal with special case grad=None)
             if node.grad is None:
                 node.grad = Tensor(outgrad)
@@ -689,7 +692,7 @@ utils.test_reshape_back(Tensor)
 # %%
 def permute_back(grad_out: Arr, out: Arr, x: Arr, axes: tuple) -> Arr:
     reverse_axes = [axes.index(i) for i in range(len(x.shape))]
-    return np.transpose((grad_out*np.ones(grad_out.shape)),reverse_axes)
+    return np.transpose(grad_out,reverse_axes)
 
 BACK_FUNCS.add_back_func(np.transpose, 0, permute_back)
 permute = wrap_forward_fn(np.transpose)
@@ -736,23 +739,18 @@ utils.test_expand_negative_length(Tensor)
 def sum_back(grad_out: Arr, out: Arr, x: Arr, dim=None, keepdim=False):
     """Basic idea: repeat grad_out over the dims along which x was summed"""
     
-    print(dim)
-    # If grad_out is a scalar, we need to make it a tensor (so we can expand it later)
-    if not isinstance(grad_out, Arr):
-        grad_out = Tensor(grad_out)
+    # print(dim)
+    # # If grad_out is a scalar, we need to make it a tensor (so we can expand it later)
+    # if not isinstance(grad_out, Arr):
+    #     grad_out = Tensor(grad_out)
     
     # If dim=None, this means we summed over all axes, and we want to repeat back to input shape
     if dim is None:
         dim = list(range(x.ndim))
         
     # If keepdim=False, then we need to add back in dims, so grad_out and x have same number of dims
-    print("Sum Back, expanding grad out dims so we can broadcast")
-    print("x.shape", x.shape)
-    print("before_shape grad_out", grad_out.shape)
     if keepdim is False:
         grad_out = np.expand_dims(grad_out, dim)
-
-    print("after shape grad_out", grad_out.shape)
     
     # Finally, we repeat grad_out along the dims over which x was summed
     return np.broadcast_to(grad_out, x.shape)
@@ -1041,7 +1039,6 @@ class Linear(Module):
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
-        self.bias = bias
         
         # sf needs to be a float
         sf = in_features ** -0.5
@@ -1062,7 +1059,7 @@ class Linear(Module):
         """
         out = x @ self.weight.permute((1, 0))
         if self.bias is not None: 
-            out += self.bias
+            out = out + self.bias
         return out
 
     def extra_repr(self) -> str:
@@ -1127,7 +1124,7 @@ def cross_entropy(logits: Tensor, true_labels: Tensor) -> Tensor:
     '''
     n_batch, _ = logits.shape
     true = logits[arange(0,n_batch), true_labels]
-    denominators = sum(exp(logits),dim = 1)
+    denominators = (exp(logits).sum(dim = 1))
     return -log(exp(true)/denominators)
 
 
@@ -1171,6 +1168,7 @@ class SGD:
     def step(self) -> None:
         with NoGrad():
             for (i, p) in enumerate(self.params):
+                print(p.shape)
                 assert isinstance(p.grad, Tensor)
                 p.add_(p.grad, -self.lr)
 
