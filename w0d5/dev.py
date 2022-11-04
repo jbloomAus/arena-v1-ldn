@@ -356,28 +356,71 @@ grad_tracking_enabled = True
 assert not b.requires_grad, "should not require grad if grad tracking globally disabled"
 assert b.recipe is None, "should not create recipe if grad tracking globally disabled"
 # %%
+# def wrap_forward_fn(numpy_func: Callable, is_differentiable=True) -> Callable:
+#     '''
+#     numpy_func: function. It takes any number of positional arguments, some of which may be NumPy arrays, and any number of keyword arguments which we aren't allowing to be NumPy arrays at present. It returns a single NumPy array.
+#     is_differentiable: if True, numpy_func is differentiable with respect to some input argument, so we may need to track information in a Recipe. If False, we definitely don't need to track information.
+
+#     Return: function. It has the same signature as numpy_func, except wherever there was a NumPy array, this has a Tensor instead.
+#     '''
+   
+#     def tensor_func(*args: Any, **kwargs: Any) -> Tensor:
+
+#         array_args = []
+#         print(numpy_func.__name__)
+#         print([type(a) for a in args])
+#         print([type(a) for a in kwargs.values()])
+
+#         # for a in args:
+#         #     if type(a) is Tensor:
+#         #         array_args.append(a.array)
+#         #     else:
+#         #         array_args.append(a)
+
+#         array_args = tuple(array_args)
+
+#         array_args = tuple([(a.array if isinstance(a, Tensor) else a) for a in args])
+#         out_array = numpy_func(*array_args, **kwargs)
+
+#         requires_grad = grad_tracking_enabled and is_differentiable and any([
+#             (isinstance(a, Tensor) and (a.requires_grad or a.recipe is not None)) for a in args
+#         ])
+
+#         y = Tensor(out_array, requires_grad)
+
+#         if requires_grad:
+#             parents = {i: a for i, a in enumerate(args) if isinstance(a, Tensor)}
+#             y.recipe = Recipe(numpy_func, array_args, kwargs, parents)
+        
+#         return y
+
+#     return tensor_func
 def wrap_forward_fn(numpy_func: Callable, is_differentiable=True) -> Callable:
-    '''
+    """
     numpy_func: function. It takes any number of positional arguments, some of which may be NumPy arrays, and any number of keyword arguments which we aren't allowing to be NumPy arrays at present. It returns a single NumPy array.
     is_differentiable: if True, numpy_func is differentiable with respect to some input argument, so we may need to track information in a Recipe. If False, we definitely don't need to track information.
 
     Return: function. It has the same signature as numpy_func, except wherever there was a NumPy array, this has a Tensor instead.
-    '''
-   
+    """
+
     def tensor_func(*args: Any, **kwargs: Any) -> Tensor:
-        requires_grad = is_differentiable and any([
-            isinstance(a, Tensor) and a.requires_grad for a in args
+        
+        arg_arrays = [(a.array if isinstance(a, Tensor) else a) for a in args]
+        out_arr = numpy_func(*arg_arrays, **kwargs)
+        
+        requires_grad = grad_tracking_enabled and is_differentiable and any([
+            (isinstance(a, Tensor) and (a.requires_grad or a.recipe is not None)) for a in args
         ])
-        parents = {i: a for i, a in enumerate(args) if isinstance(a, Tensor)}
-        array_args = tuple([a.array if isinstance(a, Tensor) else a for a in args])
-        recipe = Recipe(numpy_func, array_args, {}, parents)
-        y = Tensor(numpy_func(*array_args, **kwargs), requires_grad)
+        
+        out = Tensor(out_arr, requires_grad)
+        
         if requires_grad:
-            y.recipe = recipe
-        return y
+            parents = {idx: a for idx, a in enumerate(args) if isinstance(a, Tensor)}
+            out.recipe = Recipe(numpy_func, arg_arrays, kwargs, parents)
+            
+        return out
 
     return tensor_func
-
 
 def test_sum(wrap_forward_fn, Tensor):
     # This tests keyword arguments
@@ -676,9 +719,44 @@ utils.test_expand_negative_length(Tensor)
 # %%
 
 # %%
+# def sum_back(grad_out: Arr, out: Arr, x: Arr, dim=None, keepdim=False):
+#     '''Basic idea: repeat grad_out over the dims along which x was summed'''
+
+#     if not isinstance(grad_out, Arr):
+#         grad_out = Tensor(grad_out)
+
+#     if dim is None:
+#         dim = list(range(x.ndim))
+        
+#     if keepdim is False:
+#         grad_out = np.expand_dims(grad_out, dim)
+
+#     return np.broadcast_to(grad_out, x.shape)
+
 def sum_back(grad_out: Arr, out: Arr, x: Arr, dim=None, keepdim=False):
-    '''Basic idea: repeat grad_out over the dims along which x was summed'''
+    """Basic idea: repeat grad_out over the dims along which x was summed"""
+    
+    print(dim)
+    # If grad_out is a scalar, we need to make it a tensor (so we can expand it later)
+    if not isinstance(grad_out, Arr):
+        grad_out = Tensor(grad_out)
+    
+    # If dim=None, this means we summed over all axes, and we want to repeat back to input shape
+    if dim is None:
+        dim = list(range(x.ndim))
+        
+    # If keepdim=False, then we need to add back in dims, so grad_out and x have same number of dims
+    print("Sum Back, expanding grad out dims so we can broadcast")
+    print("x.shape", x.shape)
+    print("before_shape grad_out", grad_out.shape)
+    if keepdim is False:
+        grad_out = np.expand_dims(grad_out, dim)
+
+    print("after shape grad_out", grad_out.shape)
+    
+    # Finally, we repeat grad_out along the dims over which x was summed
     return np.broadcast_to(grad_out, x.shape)
+
 
 def _sum(x: Arr, dim=None, keepdim=False) -> Arr:
     '''Like torch.sum, calling np.sum internally.'''
@@ -697,10 +775,8 @@ utils.test_sum_dim_none(Tensor)
 Index = Union[int, tuple[int, ...], tuple[Arr], tuple[Tensor]]
 
 def coerce_index(index):
-    print(index)
     if isinstance(index, tuple):
         return tuple(i.array if isinstance(i, Tensor) else i for i in index)
-    print(index)
     return index
 
 
@@ -807,15 +883,11 @@ assert np.allclose(a.grad.array, b.grad.array)
 # %%
 def maximum_back0(grad_out: Arr, out: Arr, x: Arr, y: Arr):
     '''Backwards function for max(x, y) wrt x.'''
-    print(grad_out.shape)
-    print(out.shape)
-    print(x.shape)
-    print(y.shape)
-    return (grad_out*np.select([x>y,x==y],[1,0.5],default = 0))
+    return unbroadcast((grad_out*np.select([x>y,x==y],[1,0.5],default = 0)),x)
 
 def maximum_back1(grad_out: Arr, out: Arr, x: Arr, y: Arr):
     '''Backwards function for max(x, y) wrt y.'''
-    return (grad_out*np.select([y<x,x==y],[1,0.5],default = 0)).reshape(x)
+    return unbroadcast((grad_out*np.select([y>x,x==y],[1,0.5],default = 0)),y)
 
 maximum = wrap_forward_fn(np.maximum)
 
@@ -824,4 +896,343 @@ BACK_FUNCS.add_back_func(np.maximum, 1, maximum_back1)
 
 utils.test_maximum(Tensor)
 utils.test_maximum_broadcasted(Tensor)
+
+
+# %%
+def relu(x: Tensor) -> Tensor:
+    '''Like torch.nn.function.relu(x, inplace=False).'''
+    return maximum(x,0)
+
+utils.test_relu(Tensor)
+
+
+# %%
+def _matmul2d(x: Arr, y: Arr) -> Arr:
+    '''Matrix multiply restricted to the case where both inputs are exactly 2D.'''
+    return x @ y
+
+def matmul2d_back0(grad_out: Arr, out: Arr, x: Arr, y: Arr) -> Arr:
+    return grad_out @ y.T
+
+def matmul2d_back1(grad_out: Arr, out: Arr, x: Arr, y: Arr) -> Arr:
+    #return (grad_out.T @ x).T
+    return x.T @ grad_out
+
+matmul = wrap_forward_fn(_matmul2d)
+
+BACK_FUNCS.add_back_func(_matmul2d, 0, matmul2d_back0)
+BACK_FUNCS.add_back_func(_matmul2d, 1, matmul2d_back1)
+
+utils.test_matmul2d(Tensor)
+# %%
+class Parameter(Tensor):
+    def __init__(self, tensor: Tensor, requires_grad=True):
+        '''Share the array with the provided tensor.'''
+        super().__init__(tensor.array, requires_grad)
+
+    def __repr__(self):
+        return f"Parameter containing: {super().__repr__()}"
+x = Tensor([1.0, 2.0, 3.0])
+p = Parameter(x)
+print(p)
+assert p.requires_grad
+assert p.array is x.array
+assert repr(p) == "Parameter containing: Tensor(array([1., 2., 3.]), requires_grad=True)"
+x.add_(Tensor(np.array(2.0)))
+assert np.allclose(p.array, np.array([3.0, 4.0, 5.0])), "in-place modifications to the original tensor should affect the parameter"
+
+# %%
+class Module:
+    _modules: dict[str, "Module"]
+    _parameters: dict[str, Parameter]
+
+    def __init__(self):
+        self._modules = {}
+        self._parameters = {}
+
+    def modules(self):
+        '''Return the direct child modules of this module.'''
+        return self.__dict__["_modules"].values()
+
+    def parameters(self, recurse: bool = True) -> Iterator[Parameter]:
+        '''Return an iterator over Module parameters.
+
+        recurse: if True, the iterator includes parameters of submodules, recursively.
+        '''
+        
+        parameters_list = list(self.__dict__["_parameters"].values())
+        if recurse:
+            for module in self.modules():
+                parameters_list.extend(list(module.parameters(recurse=True)))
+        return iter(parameters_list)
+
+    def __setattr__(self, key: str, val: Any) -> None:
+        '''
+        If val is a Parameter or Module, store it in the appropriate _parameters or _modules dict.
+        Otherwise, call the superclass.
+        '''
+        if isinstance(val, Module):
+            self.__dict__["_modules"][key] = val
+        elif isinstance(val, Parameter):
+            self.__dict__["_parameters"][key] = val
+        else:
+            super().__setattr__(key,val)
+
+    def __getattr__(self, key: str) -> Union[Parameter, "Module"]:
+        '''
+        If key is in _parameters or _modules, return the corresponding value.
+        Otherwise, raise KeyError.
+        '''
+        if key in self.__dict__["_parameters"]:
+            return self.__dict__["_parameters"][key]
+        
+        if key in self.__dict__["_modules"]:
+            return self.__dict__["_modules"][key]
+        
+        raise(KeyError(key))
+        
+
+    def __call__(self, *args, **kwargs):
+        return self.forward(*args, **kwargs)
+
+    def forward(self):
+        raise NotImplementedError("Subclasses must implement forward!")
+
+    def __repr__(self):
+        def _indent(s_, numSpaces):
+            return re.sub("", "" + (" " * numSpaces), s_)
+        lines = [f"({key}): {_indent(repr(module), 2)}" for key, module in self._modules.items()]
+        return "".join([
+            self.__class__.__name__ + "(",
+            "" + "".join(lines) + "" if lines else "", ")"
+        ])
+
+class TestInnerModule(Module):
+    def __init__(self):
+        super().__init__()
+        self.param1 = Parameter(Tensor([1.0]))
+        self.param2 = Parameter(Tensor([2.0]))
+
+class TestModule(Module):
+    def __init__(self):
+        super().__init__()
+        self.inner = TestInnerModule()
+        self.param3 = Parameter(Tensor([3.0]))
+
+mod = TestModule()
+assert list(mod.modules()) == [mod.inner], list(mod.modules())
+assert list(mod.parameters()) == [
+    mod.param3,
+    mod.inner.param1,
+    mod.inner.param2,
+], "parameters should come before submodule parameters"
+print("Manually verify that the repr looks reasonable:")
+print(mod)
+
+
+# %% 
+class Linear(Module):
+    def __init__(self, in_features: int, out_features: int, bias=True):
+        """A simple linear (technically, affine) transformation.
+
+        The fields should be named `weight` and `bias` for compatibility with PyTorch.
+        If `bias` is False, set `self.bias` to None.
+        """
+        super().__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.bias = bias
+        
+        # sf needs to be a float
+        sf = in_features ** -0.5
+        
+        weight = sf * Tensor(2 * np.random.rand(out_features, in_features) - 1)
+        self.weight = Parameter(weight)
+        
+        if bias:
+            bias = sf * Tensor(2 * np.random.rand(out_features,) - 1)
+            self.bias = Parameter(bias)
+        else:
+            self.bias = None
+
+    def forward(self, x: Tensor) -> Tensor:
+        """
+        x: shape (*, in_features)
+        Return: shape (*, out_features)
+        """
+        out = x @ self.weight.permute((1, 0))
+        if self.bias is not None: 
+            out += self.bias
+        return out
+
+    def extra_repr(self) -> str:
+        # note, we need to use `self.bias is not None`, because `self.bias` is either a tensor or None, not bool
+        return f"in_features={self.in_features}, out_features={self.out_features}, bias={self.bias is not None}"
+
+
+
+# class Linear(Module):
+#     def __init__(self, in_features: int, out_features: int, bias=True):
+#         '''A simple linear (technically, affine) transformation.
+
+#         The fields should be named `weight` and `bias` for compatibility with PyTorch.
+#         If `bias` is False, set `self.bias` to None.
+#         '''
+#         super().__init__()
+#         self.in_features = in_features
+#         self.out_features = out_features
+#         self.weight = Parameter(Tensor(np.random.rand(out_features, in_features)-1)/np.sqrt(in_features))
+#         self.bias = Parameter(Tensor((np.random.rand(out_features,)-1)/np.sqrt(in_features))) if bias else None
+#         # CHECK BIAS RANGE
+#     def forward(self, x: Tensor) -> Tensor:
+#         '''
+#         x: shape (*, in_features)
+#         Return: shape (*, out_features)
+#         '''
+#         out = x @ self.weight.permute((1, 0))
+#         if self.bias is not None:
+#             out = out + self.bias 
+
+#         return out
+
+#     def extra_repr(self) -> str:
+#         return f"in_features {self.in_features}, out_features {self.out_features}. bias {self.bias is not None}"
+
+class MLP(Module):
+    def __init__(self):
+        super().__init__()
+        self.linear1 = Linear(28 * 28, 64)
+        self.linear2 = Linear(64, 64)
+        self.output = Linear(64, 10)
+
+    def forward(self, x):
+        x = x.reshape((x.shape[0], 28 * 28))
+        x = relu(self.linear1(x))
+        x = relu(self.linear2(x))
+        x = self.output(x)
+        return x
+
+
+
+# %%
+from fancy_einsum import einsum
+
+def cross_entropy(logits: Tensor, true_labels: Tensor) -> Tensor:
+    '''Like torch.nn.functional.cross_entropy with reduction='none'.
+
+    logits: shape (batch, classes)
+    true_labels: shape (batch,). Each element is the index of the correct label in the logits.
+
+    Return: shape (batch, ) containing the per-example loss.
+    '''
+    n_batch, _ = logits.shape
+    true = logits[arange(0,n_batch), true_labels]
+    denominators = sum(exp(logits),dim = 1)
+    return -log(exp(true)/denominators)
+
+
+utils.test_cross_entropy(Tensor, cross_entropy)
+
+
+
+# %%
+class NoGrad:
+    '''Context manager that disables grad inside the block. Like torch.no_grad.'''
+
+    was_enabled: bool
+
+    def __enter__(self):
+        "SOLUTION"
+        global grad_tracking_enabled
+        self.was_enabled = grad_tracking_enabled
+        grad_tracking_enabled = False
+
+    def __exit__(self, type, value, traceback):
+        "SOLUTION"
+        global grad_tracking_enabled
+        grad_tracking_enabled = self.was_enabled
+
+
+# %%
+(train_loader, test_loader) = utils.get_mnist(20)
+utils.visualize(train_loader)
+
+class SGD:
+    def __init__(self, params: Iterable[Parameter], lr: float):
+        '''Vanilla SGD with no additional features.'''
+        self.params = list(params)
+        self.lr = lr
+        self.b = [None for _ in self.params]
+
+    def zero_grad(self) -> None:
+        for p in self.params:
+            p.grad = None
+
+    def step(self) -> None:
+        with NoGrad():
+            for (i, p) in enumerate(self.params):
+                assert isinstance(p.grad, Tensor)
+                p.add_(p.grad, -self.lr)
+
+
+
+def cross_entropy(logits: Tensor, true_labels: Tensor) -> Tensor:
+    """Like torch.nn.functional.cross_entropy with reduction='none'.
+
+    logits: shape (batch, classes)
+    true_labels: shape (batch,). Each element is the index of the correct label in the logits.
+
+    Return: shape (batch, ) containing the per-example loss.
+    """
+    n_batch, n_class = logits.shape
+    true = logits[arange(0, n_batch), true_labels]
+    return -log(exp(true) / exp(logits).sum(1))
+
+def train(model, train_loader, optimizer, epoch):
+    for (batch_idx, (data, target)) in enumerate(train_loader):
+        data = Tensor(data.numpy())
+        target = Tensor(target.numpy())
+        optimizer.zero_grad()
+        output = model(data)
+        loss = cross_entropy(output, target).sum() / len(output)
+        loss.backward()
+        optimizer.step()
+        if batch_idx % 50 == 0:
+            print(
+                "Train Epoch: {} [{}/{} ({:.0f}%)]	Loss: {:.6f}".format(
+                    epoch,
+                    batch_idx * len(data),
+                    len(train_loader.dataset),
+                    100.0 * batch_idx / len(train_loader),
+                    loss.item(),
+                )
+            )
+
+
+def test(model, test_loader):
+    test_loss = 0
+    correct = 0
+    with NoGrad():
+        for (data, target) in test_loader:
+            data = Tensor(data.numpy())
+            target = Tensor(target.numpy())
+            output = model(data)
+            test_loss += cross_entropy(output, target).sum().item()
+            pred = output.argmax(dim=1, keepdim=True)
+            correct += (pred == target.reshape(pred.shape)).sum().item()
+    test_loss /= len(test_loader.dataset)
+    print("Test set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)".format(
+            test_loss, correct, len(test_loader.dataset), 100.0 * correct / len(test_loader.dataset)
+        )
+    )
+# %%
+num_epochs = 5
+model = MLP()
+start = time.time()
+optimizer = SGD(model.parameters(), 0.01)
+for epoch in range(num_epochs):
+    train(model, train_loader, optimizer, epoch)
+    test(model, test_loader)
+    optimizer.step()
+print(f"Completed in {time.time() - start: .2f}s")
 # %%
