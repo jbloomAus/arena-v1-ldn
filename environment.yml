@@ -13,6 +13,7 @@ dependencies:
   - pandas==1.5.0
   - torchvision==0.13.1
   - tqdm==4.64.1
+  - transformers==4.24.0
   - pip: 
     - einops==0.5.0
     - fancy-einsum==0.0.3
