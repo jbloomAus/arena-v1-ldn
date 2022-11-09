@@ -87,8 +87,7 @@ def single_head_masked_attention(Q: t.Tensor, K: t.Tensor, V: t.Tensor) -> t.Ten
     #attention_values = einsum(' b i j, b k j-> b i k', attention_probs, V)
     return attention_values
 
-def multihead_masked_attention(Q: t.Tensor, K: t.Tensor, V: t.Tensor,
-                               num_heads: int):
+def multihead_masked_attention(Q: t.Tensor, K: t.Tensor, V: t.Tensor, num_heads: int):
     '''
     Implements multihead masked attention on the matrices Q, K and V.
     Q: shape (batch, seq, nheads*headsize)
@@ -107,9 +106,9 @@ def multihead_masked_attention(Q: t.Tensor, K: t.Tensor, V: t.Tensor,
 
     QKT = einsum('b nh s_q h, b nh s_k h -> b nh s_q s_k', Q_, K_)
     QKT = QKT / (headsize**0.5)
-    # tri = t.triu(t.ones((seq_len, seq_len)), diagonal=1)*(-10 ** 4)
-    # QKT_masked = (QKT + tri)
-    attention_probs = t.softmax(QKT, dim=-1)
+    tri = t.triu(t.ones((seq_len, seq_len), device=Q.device), diagonal=1)*(-10 ** 4)
+    QKT_masked = (QKT + tri)
+    attention_probs = t.softmax(QKT_masked, dim=-1)
 
     attention_values_ = einsum('b nh s_q s_k, b nh s_k h -> b nh s_q h',
                                attention_probs, V_)
