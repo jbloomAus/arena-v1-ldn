@@ -6,7 +6,7 @@ dependencies:
   - pip
   - python==3.10.6
   - plotly==5.10.0
-  - pytorch==1.12.1
+  - pytorch==1.14
   - numpy==1.23.4
   - ipywidgets==7.7.2
   - pytest==7.1.3
