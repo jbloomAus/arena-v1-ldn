@@ -126,103 +126,52 @@ print(t.argmax(example_output[1], dim = -1))
 print(t.argmax(example_output[2], dim = -1))
 
 # %%
+import torch as t
+import torch.nn as nn
+from src.train import train
+from src.datasets import RevSequenceDataset
+from src.transformers import TransformerConfig, DecoderOnlyTransformer
+from torch.utils.data import DataLoader
+from multiprocessing import cpu_count
+
+
+
+batch_size = 256
+seq_len = 6
+transformer_config = TransformerConfig(num_layers=2,
+                                       num_heads=4,
+                                       vocab_size=10,
+                                       hidden_size=512,
+                                       max_seq_len=seq_len,
+                                       dropout=0.1,
+                                       layer_norm_epsilon=1e-5)
+
+model = DecoderOnlyTransformer(config=transformer_config)
+
 from torchinfo import torchinfo
-torchinfo.summary(model, input_data=t.tensor([[1,2,3,4,5]]))
-# %%
+
+torchinfo.summary(model, input_data=t.tensor([[1, 2, 3, 4, 5, 6]]))
+
+# get data
+train_set_size = 10**4#5*10**6
+test_set_size = 10**3
+num_workers = 0#cpu_count()
+
+train_dataset = RevSequenceDataset(seq_length = seq_len, data_set_size=train_set_size)
+train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+test_dataset = RevSequenceDataset(seq_length = seq_len, data_set_size=test_set_size)
+test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
 
+# get model trained from script
+model.load_state_dict(t.load("best_decoder_only_rev_sequence_model.pt"))
 
-
-
-# %%
-import wandb
-import os
-from einops import rearrange
-from tqdm import tqdm
-device = t.device('cpu')
-os.environ['WANDB_NOTEBOOK_NAME'] = 'my_solutions.py'
-def train():
-
-    # wandb_config_dict = {
-    #     'batch_size': 256,
-    #     'hidden_size': 64,
-    #     'lr': 0.00125
-    # }
-    
-    # wandb.init(project='w1d1_transformer', config=wandb_config_dict)
-
-    config = TransformerConfig(
-        num_layers=2, #N=6
-        num_heads=4, #h=8
-        vocab_size=10,
-        hidden_size=64,#wandb.config.hidden_size, #d_model = 64 x 8 = 512
-        max_seq_len=6,
-        dropout=0.0 #p=0.1
-    )
-
-    epochs = 10
-    batch_size = 1024
-    lr = 10e-4 #wandb.config.lr
-    train_samples = 50000
-    test_samples = 1000
-
-    model = DecoderOnlyTransformer(config).to(device).train()
-    optimizer = t.optim.Adam(model.parameters(), lr=lr)
-    loss_fn = nn.CrossEntropyLoss()
-
-    examples_seen = 0
-    start_time = time.time()
-
-    trainset = CustomTextDataset.from_config(config, train_samples)
-    testset = CustomTextDataset.from_config(config, test_samples)
-
-    trainloader = DataLoader(trainset, shuffle=True, batch_size=batch_size)
-    testloader = DataLoader(testset, shuffle=True, batch_size=batch_size)
-    #wandb.watch(model, criterion=loss_fn, log="all", log_freq=10, log_graph=True)
-
-    for epoch in range(epochs):
-        progress_bar = tqdm(trainloader)
-
-        for (x, y) in progress_bar:
-            x = x.to(device)
-            y = y.to(device)
-            optimizer.zero_grad()
-            y_hat = model(x)
-            loss = loss_fn(rearrange(y_hat, "batch seq vocab_size -> (batch seq) vocab_size"), rearrange(y, "batch seq -> (batch seq)"))
-            loss.backward()
-            optimizer.step()
-            progress_bar.set_description(f"Epoch = {epoch}, Loss = {loss.item():.4f}")
-            examples_seen += len(x)
-            #wandb.log({"train_loss": loss, "elapsed": time.time() - start_time}, step=examples_seen)
-
-        with t.inference_mode():
-            accuracy = 0
-            total = 0
-            for (x, y) in testloader:
-                x = x.to(device)
-                y = y.to(device)
-                y_hat = model(x)
-                y_flat = rearrange(y, "batch seq -> (batch seq)")
-                y_pred_flat = rearrange(y_hat, "batch seq vocab_size -> (batch seq) vocab_size")
-                y_predictions = y_pred_flat.argmax(-1)
-                accuracy += (y_predictions == y_flat).sum().item()
-                total += y_flat.size(0)
-
-            #wandb.log({"test_accuracy": accuracy/total}, step=examples_seen)
-
-        print(f"Epoch {epoch+1}/{epochs}, train loss is {loss:.6f}, accuracy is {accuracy}/{total}")
-
-    #filename = f"{wandb.run.dir}/model_state_dict.pt"
-    # print(f"Saving model to: {filename}")
-    # t.save(model.state_dict(), filename)
-    #wandb.save(filename)
-    return model
-
-model = train()
-
-# %% 
+# Test forward pass
 data = next(iter(test_loader))
 example_output = model(data[0])[:3]
 print(data[1][:3])
 print(t.argmax(example_output, dim = -1))
+
+
+
 # %%

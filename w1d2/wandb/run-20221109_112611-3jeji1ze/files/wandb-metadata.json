@@ -1,0 +1,22 @@
+{
+    "os": "macOS-12.5.1-arm64-arm-64bit",
+    "python": "3.10.6",
+    "heartbeatAt": "2022-11-09T11:26:12.188447",
+    "startedAt": "2022-11-09T11:26:11.588087",
+    "docker": null,
+    "cpu_count": 10,
+    "cuda": null,
+    "args": [],
+    "state": "running",
+    "program": "/Users/josephbloom/GithubRepositories/arena-v1-ldn/w1d2/train_reverse_sequence_task.py",
+    "codePath": "w1d2/train_reverse_sequence_task.py",
+    "git": {
+        "remote": "git@github.com:jbloomAus/arena-v1-ldn.git",
+        "commit": "ab2c0a42b5082e2006d3eecd169f54f46dcbfdf7"
+    },
+    "email": "joseph@massdynamics.com",
+    "root": "/Users/josephbloom/GithubRepositories/arena-v1-ldn",
+    "host": "Josephs-MacBook-Pro.local",
+    "username": "josephbloom",
+    "executable": "/Users/josephbloom/miniforge3/envs/arena/bin/python"
+}
