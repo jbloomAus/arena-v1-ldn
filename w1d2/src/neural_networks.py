@@ -52,8 +52,9 @@ class Dropout(nn.Module):
         self.p = p 
 
     def forward(self, x: t.Tensor) -> t.Tensor:
+        device = x.device
         if self.training:
-            mask = (t.rand(x.shape) > self.p)
+            mask = (t.rand(x.shape) > self.p).to(device)
             return (x*mask)/(1-self.p)
         else:
             return x 

@@ -39,7 +39,8 @@ class PositionalEncoding(nn.Module):
         '''
         x has shape (n, seq_len, hidden_dim)
         '''
-        return x + self.maximal_pe[:x.size(1), :]
+        device = x.device
+        return x + self.maximal_pe[:x.size(1), :].to(device)
 
 def single_head_attention(Q: t.Tensor, K: t.Tensor, V: t.Tensor) -> t.Tensor:
     '''
@@ -147,7 +148,6 @@ class MultiheadMaskedAttention(nn.Module):
         out = self.W_O(av)
         return out
 
-
 @dataclass(frozen=True)
 class TransformerConfig:
     '''Constants used throughout your decoder-only transformer model.'''
@@ -159,7 +159,6 @@ class TransformerConfig:
     max_seq_len: int
     dropout: float = 0.1
     layer_norm_epsilon: float = 1e-05
-
 
 class DecoderBlock(nn.Module):
 
@@ -200,6 +199,6 @@ class DecoderOnlyTransformer(nn.Module):
         x = self.decoder_blocks(x)
         x = self.layer_norm_final(x)
 
-        x = einsum('word emd, b seq emb -> b seq word', self.token_embedding.weight, x)
+        x = einsum('word emb, b seq emb -> b seq word', self.token_embedding.weight, x)
 
         return x

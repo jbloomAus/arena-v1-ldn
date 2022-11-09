@@ -1,6 +1,8 @@
 import time
 import einops
 import torch as t
+from tqdm import tqdm 
+
 
 def train(model, optimizer, trainloader, testloader, criterion, num_epochs=10, device = "mps"):
 
@@ -9,9 +11,12 @@ def train(model, optimizer, trainloader, testloader, criterion, num_epochs=10, d
     print("Beginning Training")
     data = next(iter(testloader))
     example_output = model(data[0])[:3]
+    print("expected results")
     print(data[1][:3])
+    print("current, bad, output")
     print(t.argmax(example_output, dim = -1))
     print("="*30)
+    
 
     for epoch in range(num_epochs):
         
@@ -19,8 +24,10 @@ def train(model, optimizer, trainloader, testloader, criterion, num_epochs=10, d
         model.train()
         
         running_loss = 0.0
+        training_loss = 0.0
+        progress_bar = tqdm(trainloader, desc="Epoch {} Training Loss {}".format(epoch, training_loss))
 
-        for batch, (x, y)  in enumerate(trainloader):
+        for (x, y)  in progress_bar:
             
             x = x.to(device)
             y = y.to(device)
@@ -44,7 +51,7 @@ def train(model, optimizer, trainloader, testloader, criterion, num_epochs=10, d
         print('Epoch {} Loss: {:.4f}'.format(epoch, epoch_loss))
 
         data = next(iter(testloader))
-        example_output = model(data[0])[:3]
+        example_output = model(data[0].to(device))[:3]
         print(data[1][:3])
         print(t.argmax(example_output, dim = -1))
         print("="*30)
