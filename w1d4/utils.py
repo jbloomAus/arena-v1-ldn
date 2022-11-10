@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import torch as t
 
 def print_param_count(*models, display_df=True, use_state_dict=False):
     """
@@ -45,3 +46,24 @@ def print_param_count(*models, display_df=True, use_state_dict=False):
             display(s)
     else:
         return df
+
+def test_load_pretrained_weights(model, tokenizer):
+
+    model.eval()
+    device = next(model.parameters()).device
+    
+    def encode(text: str) -> t.Tensor:
+        """Return a Tensor of shape (batch=1, seq)."""
+        return tokenizer(text, return_tensors="pt")["input_ids"].to(device)
+
+    prompt = "Former President of the United States of America, George"
+    input_ids = encode(prompt)
+    with t.inference_mode():
+        output = model(input_ids)
+        logits = output[0, -1] if isinstance(output, t.Tensor) else output.logits[0, -1]
+    topk = t.topk(logits, k=10).indices
+    next_tokens = tokenizer.batch_decode(topk.reshape(-1, 1))
+    print("Prompt: ", prompt)
+    print("Your model's top 10 predictions: ", next_tokens)
+    assert " Washington" in next_tokens
+    assert " Bush" in next_tokens
