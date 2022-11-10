@@ -1,17 +1,11 @@
-# %%
-from typing import Any, Union, Optional, Callable
 import torch as t
-from einops import rearrange
 import transformers
 
 device = t.device("cuda" if t.cuda.is_available() else "cpu")
 assert str(device) == "cuda"
-# %%
 
 tokenizer = transformers.AutoTokenizer.from_pretrained("gpt2")
 gpt = transformers.AutoModelForCausalLM.from_pretrained("gpt2").to(device).train()
-
-# %%
 
 @t.inference_mode()
 def beam_search(
@@ -24,8 +18,6 @@ def beam_search(
     verbose: if True, print the current (unfinished) completions after each iteration for debugging purposes
 
     Return list of length num_return_sequences. Each element is a tuple of (logprob, tokens) where the tokens include both prompt and completion, sorted by descending logprob.
-
-    Note - we shouldn't store the model's log output (this is translation-invariant across the vocabulary, so wouldn't tell us whether the EOS completions are better than the run-on sentences). So instead we take softmax of the logits, then take log again (you can do this via the .log_softmax method). This way all our logits are negative, and early-finish sentences are strictly better.
     """
     assert num_return_sequences <= num_beams
 
@@ -55,7 +47,7 @@ def beam_search(
 
             # Append to the new best completions list
             for logit, idx in zip(topk_logits, topk_indices):
-                new_completion_and_logit = (completion + [idx.item(),], logitsum + logit.item())
+                new_completion_and_logit = (logitsum + logit.item(), completion + [idx.item(),])
                 new_best_logitsums_and_completions.append(new_completion_and_logit)
 
         # This section updates (and sorts) the list of best completions, and also updates `final_logitsums_and_completions` if EOS was produced
@@ -77,12 +69,10 @@ def beam_search(
         if n == max_new_tokens - 1:
             final_logitsums_and_completions.extend(best_logitsums_and_completions)
             final_logitsums_and_completions = sort_by_logits_and_crop(final_logitsums_and_completions, max_size=num_return_sequences)
-            if verbose:
-                print_sequences("Final sequences", final_logitsums_and_completions, tokenizer)
+            if verbose: print_sequences(f"Returning best {num_return_sequences=} completions:", final_logitsums_and_completions, tokenizer)
         else:
             final_logitsums_and_completions = sort_by_logits_and_crop(final_logitsums_and_completions, max_size=num_beams)
-            if verbose:
-                print_sequences("Current best sequences", best_logitsums_and_completions, tokenizer)
+            if verbose: print_sequences(f"Printing {num_beams=} best completions:", best_logitsums_and_completions, tokenizer)
 
 
     return final_logitsums_and_completions
@@ -91,7 +81,8 @@ def print_sequences(name, logitsums_and_completions, tokenizer):
     if len(logitsums_and_completions) == 0:
         return
     print("\n" + name + "\n")
-    for completion, logit_sum in logitsums_and_completions:
+    print("logitsum | completion")
+    for logit_sum, completion in logitsums_and_completions:
         text = tokenizer.decode(completion)
         print(f"{logit_sum:>8.3f} | {text}")
 
