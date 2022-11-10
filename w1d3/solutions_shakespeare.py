@@ -21,7 +21,7 @@ from IPython.display import display
 from torch.utils.data import Dataset, DataLoader
 
 device = t.device("cuda" if t.cuda.is_available() else "cpu")
-assert str(device) == "cuda"
+assert str(device) == "cpu"
 
 # %%
 # ============================= TRANSFORMER ARCHITECTURE =============================
