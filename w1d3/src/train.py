@@ -17,12 +17,12 @@ def train(model, tokenizer, optimizer, trainloader, testloader, criterion, num_e
 
     for epoch in range(num_epochs):
         
-        
         model.train()
         running_loss = 0.0
         progress_bar = tqdm(trainloader)
+        
 
-        for (x, y)  in progress_bar:
+        for i, (x, y)  in enumerate(progress_bar):
             
             x = x.to(device)
             #x = tokenizer.encode(x, return_tensors = True)
