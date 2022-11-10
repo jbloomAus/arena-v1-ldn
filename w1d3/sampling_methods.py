@@ -310,7 +310,7 @@ from shakespeare_utils import WordDataset,WordsTokenizer
 
 config = {
 'batch_size': 16,
-'hidden_size': 64,
+'hidden_size': 512,
 'lr': 0.00125,
 'seq_len': 20,
 'num_layers': 6,
