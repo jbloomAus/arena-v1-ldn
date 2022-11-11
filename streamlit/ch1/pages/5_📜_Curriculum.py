@@ -8,7 +8,7 @@ import re
 import pandas as pd
 import platform
 is_local = (platform.processor() != "")
-rootdir = "" if is_local else "ch1/"
+rootdir = "" if is_local else "streamlit/ch1/"
 
 st.set_page_config(
     # initial_sidebar_state="expanded",
