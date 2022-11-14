@@ -81,43 +81,58 @@ class MultiheadAttention(nn.Module):
         Q = self.query(x)
         K = self.key(x)
         V = self.value(x)
-        av = multihead_masked_attention(Q, K, V, additive_attention_mask, self.num_heads)
+        av = self.multihead_masked_attention(Q, K, V, additive_attention_mask)
         # av shape: b s_q emb
         # W_O shape: emb, embs
         out = self.output["dense"](x)
         out = self.output["LayerNorm"](x + input)
         return out
 
-def multihead_masked_attention(Q: t.Tensor, K: t.Tensor, V: t.Tensor, mask: t.Tensor, num_heads: int):
-    '''
-    Implements multihead masked attention on the matrices Q, K and V.
-    Q: shape (batch, seq, nheads*headsize)
-    K: shape (batch, seq, nheads*headsize)
-    V: shape (batch, seq, nheads*headsize)
-    mask: shape (batch, 1, 1, seq)
-    Return: shape (batch, seq_len, nheads*headsize)
-    '''
+    def multihead_masked_attention(self, Q: t.Tensor, K: t.Tensor, V: t.Tensor, mask: t.Tensor = None):
+        '''
+        Implements multihead masked attention on the matrices Q, K and V.
+        Q: shape (batch, seq, nheads*headsize)
+        K: shape (batch, seq, nheads*headsize)
+        V: shape (batch, seq, nheads*headsize)
+        mask: shape (batch, 1, 1, seq)
+        Return: shape (batch, seq_len, nheads*headsize)
+        '''
 
-    emb_len = Q.shape[-1]
-    seq_len = Q.shape[-2]
-    headsize = emb_len // num_heads
+        headsize = self.hidden_size // self.num_heads
 
-    Q_ = einops.rearrange(Q, 'b s (nh h) -> b nh s h', nh=num_heads)
-    K_ = einops.rearrange(K, 'b s (nh h) -> b nh s h', nh=num_heads)
-    V_ = einops.rearrange(V, 'b s (nh h) -> b nh s h', nh=num_heads)
+        Q_ = einops.rearrange(Q, 'b s (nh h) -> b nh s h', nh=self.num_heads)
+        K_ = einops.rearrange(K, 'b s (nh h) -> b nh s h', nh=self.num_heads)
+        V_ = einops.rearrange(V, 'b s (nh h) -> b nh s h', nh=self.num_heads)
 
-    QKT = einsum('b nh s_q h, b nh s_k h -> b nh s_q s_k', Q_, K_)
-    QKT = QKT / (headsize**0.5)
-    if mask is not None:
-        QKT = (QKT + mask)
-    attention_probs = t.softmax(QKT, dim=-1)
-    attention_values_ = einsum('b nh s_q s_k, b nh s_k h -> b nh s_q h',
-                               attention_probs, V_)
-    # b hn s_q h -->e = n*h --> b s_q e
-    attention_values = einops.rearrange(attention_values_,
-                                        ' b hn s_q h ->  b s_q (hn h)')
+        QKT = einsum('b nh s_q h, b nh s_k h -> b nh s_q s_k', Q_, K_)
+        QKT = QKT / (headsize**0.5)
+        if mask is not None:
+            QKT = (QKT + mask)
+        attention_probs = t.softmax(QKT, dim=-1)
+        attention_values_ = einsum('b nh s_q s_k, b nh s_k h -> b nh s_q h',
+                                attention_probs, V_)
+        # b hn s_q h -->e = n*h --> b s_q e
+        attention_values = einops.rearrange(attention_values_,
+                                            ' b hn s_q h ->  b s_q (hn h)')
 
-    return attention_values
+        return attention_values
+
+batch, seq, nheads, headsize = 1, 5, 2, 10
+a = t.randn((batch, seq, nheads*headsize))
+b = t.randn((batch, seq, nheads*headsize))
+c = t.randn((batch, seq, nheads*headsize))
+tmp = MultiheadAttention(nheads*headsize, nheads, 1e-12).multihead_masked_attention(
+    a, b, c 
+)
+
+from solutions_build_bert import MultiheadAttention as CallumsMultiHeadedAttention
+tmp2 = CallumsMultiHeadedAttention(
+    TransformerConfig(
+        1, 1, 12, nheads*headsize, 10, 0.1, 1e-12
+    )
+).multihead_attention(a,b,c, None, nheads)
+assert t.equal(tmp, tmp2), 'Multiheaded attention is not behaving identically with masks off.'
+# %%
 
 class BERTBlock(nn.Module):
 
@@ -144,10 +159,9 @@ class BERTBlock(nn.Module):
         additive_attention_mask: shape (batch, nheads=1, seqQ=1, seqK)
         '''
         x = self.attention(x, additive_attention_mask)
-        x_res = x 
-        x = self.GELU(self.intermediate["dense"](x))
-        x = self.dropout(self.output["dense"](x))
-        x = self.output["LayerNorm"](x + x_res)
+        x_mlp = self.GELU(self.intermediate["dense"](x))
+        x_mlp = self.dropout(self.output["dense"](x_mlp))
+        x = self.output["LayerNorm"](x + x_mlp)
         return x
 
 class BERTCommon(nn.Module):
@@ -166,11 +180,11 @@ class BERTCommon(nn.Module):
         self.dropout = Dropout(p=config.dropout)
         
         self.encoder = nn.ModuleDict({"layer": nn.ModuleList([BERTBlock(
-            config.hidden_size,
-            config.num_heads,
-            config.dropout,
-            config.layer_norm_epsilon
-        ) for _ in range(config.num_layers)])})
+                                                config.hidden_size,
+                                                config.num_heads,
+                                                config.dropout,
+                                                config.layer_norm_epsilon
+                                            ) for _ in range(config.num_layers)])})
         
     def forward(
             self,
@@ -277,7 +291,7 @@ def print_param_count(*models, display_df=True, use_state_dict=False):
     else:
         return df
 
-#print_param_count(bert, my_bert, use_state_dict=False)
+#
 # %%
 
 def copy_weights_from_bert(my_bert: nn.Module, bert) -> nn.Module:
@@ -328,8 +342,29 @@ def copy_weights_from_bert(my_bert: nn.Module, bert) -> nn.Module:
 tokenizer = transformers.AutoTokenizer.from_pretrained("bert-base-cased")
 bert = transformers.BertForMaskedLM.from_pretrained("bert-base-cased")
 my_bert = BERTLanguageMODEL(config)
+df = print_param_count(bert, my_bert, use_state_dict=False, display_df=False)
+display(df)
 my_bert = copy_weights_from_bert(my_bert, bert)
 
+# %% 
+
+# check copy weights worked.
+def replace_name(k):
+    new_k = k.replace("self.", "").replace(".predictions.transform.dense","")
+    new_k = new_k.replace("cls.predictions.bias","prediction_bias")
+    new_k = new_k.replace("cls.predictions.transform.","")
+    return new_k
+
+names1 = df.name_1.apply(replace_name).to_list()
+names2 = df.name_2.to_list()
+for i, n_i in enumerate(names1):
+    for j, n_j in enumerate(names2):
+
+        if n_i == n_j:
+            #print(i- j)
+            break
+    else:
+        print(n_i) 
 
 # %%
 import plotly.express as px
@@ -348,13 +383,13 @@ def predict(model, tokenizer, text: str, k=15) -> List[List[str]]:
     mask_positons = (input_ids.squeeze() == 103).nonzero(as_tuple=True)[0]
     print(mask_positons)
     mask_token_predictions = []
-    for position in mask_positons: #  t.arange(input_ids.size(1)):#
+    for position in t.arange(input_ids.size(1)):#
         position_completion = []
         position_logits = logits.squeeze()[position]
         output_ids = t.topk(position_logits, k= 15).indices
         for id in output_ids:
             position_completion.append(tokenizer.decode(id))
-        mask_token_predictions.append(sorted(position_completion))
+        mask_token_predictions.append((position_completion))
     
     return mask_token_predictions
 
