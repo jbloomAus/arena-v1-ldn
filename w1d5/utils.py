@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import torch as t
+from IPython.display import display
 
 def print_param_count(*models, display_df=True, use_state_dict=False):
     """
