@@ -13,25 +13,25 @@ print(f"default data type: {t.get_default_dtype()}")
 if __name__ == '__main__':
 
     config = {
-    'batch_size': 64,
+    'batch_size': 16,
     'hidden_size': 512,
     'lr': 0.00125,
-    'seq_len': 120,
+    'seq_len': 40,
     'num_layers': 8,
     'num_heads': 8,
     'vocab_size': None,
     'num_epochs': 1,
-    'device': 'cpu',
+    'device': 'mps',
     'dropout': 0.1,
     'layer_norm_epsilon': 1e-4,
-    'train_set_size': 60 * 10**4,
+    'train_set_size': 2 * 10**4,
     'test_set_size': 10000,
     'num_workers': 0,
     }
 
     wandb.init(project="W1D3 Shakespeare Transformer Tilman and Joseph",
             entity="arena-ldn",
-            name ="CPU overnight (dev)",
+            name ="MPS - Rescale embedding Variance - batch size 16, seq len 40",
             config=config)
 
     # get data

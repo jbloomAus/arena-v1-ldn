@@ -10,7 +10,7 @@ class Embedding(nn.Module):
         super().__init__()
         self.num_embeddings = num_embeddings
         self.embeddding_dim = embedding_dim
-        self.weight = nn.Parameter(t.randn(num_embeddings,embedding_dim))
+        self.weight = nn.Parameter(0.02*t.randn(num_embeddings,embedding_dim))
 
     def forward(self, x) -> t.Tensor:
         '''For each integer in the input, return that row of the embedding.
