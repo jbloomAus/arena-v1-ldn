@@ -21,6 +21,7 @@ from torch.optim import AdamW
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 import wandb
+import random
 
 IMDB_URL = "https://ai.stanford.edu/~amaas/data/sentiment/aclImdb_v1.tar.gz"
 DATA_FOLDER = "./data/bert-imdb/"
@@ -110,6 +111,9 @@ def to_dataset(tokenizer, reviews: list[Review]) -> TensorDataset:
     sentiment_labels: shape (batch, ), dtype int
     star_labels: shape (batch, ), dtype int
     '''
+
+    total_positive = 0
+    total_negative = 0
     dataset = []
     input_ids = []
     attention_mask = []
@@ -121,6 +125,12 @@ def to_dataset(tokenizer, reviews: list[Review]) -> TensorDataset:
         attention_mask.append(result.attention_mask)
         sentiment_labels.append(t.tensor(int(review.is_positive)))
         star_labels.append(t.tensor(review.stars))
+        if review.is_positive:
+            total_positive += 1
+        else:
+            total_negative += 1
+    print("Total positive: ", total_positive)
+    print("Total negative: ", total_negative)
 
     return TensorDataset(t.tensor(input_ids), 
         t.tensor(attention_mask), 
@@ -164,9 +174,9 @@ if __name__ == "__main__":
         'device': 'mps',
         'dropout': 0.1,
         'layer_norm_epsilon': 1e-12,
-        'train_set_size': 1000,
+        'train_set_size': 5000,
         'test_set_size': 1000,
-        'num_workers': 2,
+        'num_workers': 1,
     }
 
     wandb.init(project="Joseph - Fine Tuning BERT on IMDB",
@@ -179,12 +189,12 @@ if __name__ == "__main__":
     # assert sum((r.split == "test" for r in reviews)) == 25000
 
     #print("Tokenizing reviews...")
-    # tokenizer = transformers.AutoTokenizer.from_pretrained("bert-base-cased")
-    # train_data = to_dataset(tokenizer, [r for r in reviews if r.split == "train"][:wandb.config.train_set_size])
-    # test_data = to_dataset(tokenizer, [r for r in reviews if r.split == "test"][:wandb.config.test_set_size])
-    # t.save((train_data, test_data), SAVED_TOKENS_PATH)
+    tokenizer = transformers.AutoTokenizer.from_pretrained("bert-base-cased")
+    train_data = to_dataset(tokenizer, random.sample([r for r in reviews if r.split == "train"],wandb.config.train_set_size))
+    test_data = to_dataset(tokenizer, random.sample([r for r in reviews if r.split == "test"], wandb.config.test_set_size))
+    t.save((train_data, test_data), SAVED_TOKENS_PATH)
 
-    train_data, test_data = t.load(SAVED_TOKENS_PATH)
+    #train_data, test_data = t.load(SAVED_TOKENS_PATH)
     assert len(train_data) == wandb.config.train_set_size, f"Expected {wandb.config.train_set_size} training examples, got {len(train_data)}"
     assert len(test_data) == wandb.config.test_set_size, f"Expected {wandb.config.test_set_size} test examples, got {len(test_data)}"
 
@@ -296,11 +306,11 @@ if __name__ == "__main__":
 
         print(f'Accuracy of the network on the {total} test reviews (sentiment): {100 * correct_sentiment / total}')
         print(f'Average Sentiment loss / batch: {sentiment_loss/len(testloader)}')
-        print(f'Avergae Star loss / batch: {star_loss/len(testloader)}')
+        print(f'Average Star loss / batch: {star_loss/len(testloader)}')
 
-        wandb.log({"test_sentiment_loss": 100 * correct_sentiment / total, 
-        "test_star_loss": sentiment_loss/len(testloader),
-        "test_sentiment_accuracy": star_loss/len(testloader)})
+        wandb.log({"test_sentiment_accuracy": 100 * correct_sentiment / total, 
+        "test_sentiment_loss": sentiment_loss/len(testloader),
+        "test_star_loss": star_loss/len(testloader)})
 
 
     test(trained_bert_classifier, testloader, device = wandb.config.device)
