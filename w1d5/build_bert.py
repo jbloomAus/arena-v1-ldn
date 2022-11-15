@@ -16,7 +16,7 @@ from IPython.display import display
 from src.activations import GELU
 from src.neural_networks import Dropout, Embedding, LayerNorm
 from src.transformers import Linear, TransformerConfig
-
+import plotly.express as px 
 config = TransformerConfig(
     hidden_size=768, 
     num_heads=12,
@@ -46,7 +46,7 @@ def make_additive_attention_mask(one_zero_attention_mask: t.Tensor, big_negative
     out = t.where(one_zero_attention_mask == 1, 0, big_negative_number).unsqueeze(1).unsqueeze(1) # shape batch, seq
     return out
 
-utils.test_make_additive_attention_mask(make_additive_attention_mask)
+#utils.test_make_additive_attention_mask(make_additive_attention_mask)
 
 class MultiheadAttention(nn.Module):
     # Hydra-Attention
@@ -84,8 +84,8 @@ class MultiheadAttention(nn.Module):
         av = self.multihead_masked_attention(Q, K, V, additive_attention_mask)
         # av shape: b s_q emb
         # W_O shape: emb, embs
-        out = self.output["dense"](x)
-        out = self.output["LayerNorm"](x + input)
+        out = self.output["dense"](av)
+        out = self.output["LayerNorm"](out + input)
         return out
 
     def multihead_masked_attention(self, Q: t.Tensor, K: t.Tensor, V: t.Tensor, mask: t.Tensor = None):
@@ -117,21 +117,21 @@ class MultiheadAttention(nn.Module):
 
         return attention_values
 
-batch, seq, nheads, headsize = 1, 5, 2, 10
-a = t.randn((batch, seq, nheads*headsize))
-b = t.randn((batch, seq, nheads*headsize))
-c = t.randn((batch, seq, nheads*headsize))
-tmp = MultiheadAttention(nheads*headsize, nheads, 1e-12).multihead_masked_attention(
-    a, b, c 
-)
+# batch, seq, nheads, headsize = 1, 5, 2, 10
+# a = t.randn((batch, seq, nheads*headsize))
+# b = t.randn((batch, seq, nheads*headsize))
+# c = t.randn((batch, seq, nheads*headsize))
+# tmp = MultiheadAttention(nheads*headsize, nheads, 1e-12).multihead_masked_attention(
+#     a, b, c 
+# # )
 
-from solutions_build_bert import MultiheadAttention as CallumsMultiHeadedAttention
-tmp2 = CallumsMultiHeadedAttention(
-    TransformerConfig(
-        1, 1, 12, nheads*headsize, 10, 0.1, 1e-12
-    )
-).multihead_attention(a,b,c, None, nheads)
-assert t.equal(tmp, tmp2), 'Multiheaded attention is not behaving identically with masks off.'
+# from solutions_build_bert import MultiheadAttention as CallumsMultiHeadedAttention
+# tmp2 = CallumsMultiHeadedAttention(
+#     TransformerConfig(
+#         1, 1, 12, nheads*headsize, 10, 0.1, 1e-12
+#     )
+# ).multihead_attention(a,b,c, None, nheads)
+# assert t.equal(tmp, tmp2), 'Multiheaded attention is not behaving identically with masks off.'
 # %%
 
 class BERTBlock(nn.Module):
@@ -159,8 +159,7 @@ class BERTBlock(nn.Module):
         additive_attention_mask: shape (batch, nheads=1, seqQ=1, seqK)
         '''
         x = self.attention(x, additive_attention_mask)
-        x_mlp = self.GELU(self.intermediate["dense"](x))
-        x_mlp = self.dropout(self.output["dense"](x_mlp))
+        x_mlp =  self.dropout(self.output["dense"](self.GELU(self.intermediate["dense"](x))))
         x = self.output["LayerNorm"](x + x_mlp)
         return x
 
@@ -170,15 +169,8 @@ class BERTCommon(nn.Module):
         super().__init__()
         
         self.config = config 
-        self.embeddings = nn.ModuleDict({
-            "word_embeddings": Embedding(config.vocab_size, embedding_dim= config.hidden_size),
-            "position_embeddings": Embedding(config.max_seq_len, embedding_dim= config.hidden_size),
-            "token_type_embeddings": Embedding(2, embedding_dim= config.hidden_size),
-            "LayerNorm": LayerNorm(config.hidden_size)
-        })
-
+        self.embeddings = BERTEmbeddings(config)
         self.dropout = Dropout(p=config.dropout)
-        
         self.encoder = nn.ModuleDict({"layer": nn.ModuleList([BERTBlock(
                                                 config.hidden_size,
                                                 config.num_heads,
@@ -202,21 +194,39 @@ class BERTCommon(nn.Module):
         else:
             additive_attention_mask = make_additive_attention_mask(one_zero_attention_mask)
         
-        if token_type_ids is None:
-            token_type_ids = t.zeros_like(x, dtype=t.int64)
-
-        pos = t.arange(x.shape[1], device=x.device)
-        x = self.embeddings["word_embeddings"](x) + self.embeddings["position_embeddings"](pos)
-        x = x + self.embeddings["token_type_embeddings"](token_type_ids)
-        x = self.embeddings["LayerNorm"](x)
-        x = self.dropout(x)
+        x = self.embeddings(x, token_type_ids)
 
         for block in self.encoder["layer"]:
             x = block(x, additive_attention_mask)
   
-        # # project to vocab size
-        # x = einsum('word emb, b seq emb -> b seq word', self.wte.weight, x)
+        return x
 
+class BERTEmbeddings(nn.Module):
+
+    def __init__(self, config: TransformerConfig):
+        super().__init__()
+        self.word_embeddings = nn.Embedding(config.vocab_size, embedding_dim= config.hidden_size)
+        self.position_embeddings = nn.Embedding(config.max_seq_len, embedding_dim= config.hidden_size)
+        self.token_type_embeddings = nn.Embedding(2, embedding_dim= config.hidden_size)
+        self.LayerNorm = nn.LayerNorm(config.hidden_size, eps= config.layer_norm_epsilon)
+        self.dropout = nn.Dropout(p=config.dropout)
+    
+    def forward(
+            self,
+            x: t.Tensor,
+            token_type_ids: Optional[t.Tensor] = None,
+        ) -> t.Tensor:
+        """
+        input_ids: (batch, seq) - the token ids
+        token_type_ids: (batch, seq) - only used for next sentence prediction.
+        one_zero_attention_mask: (batch, seq) - only used in training. See make_additive_attention_mask.
+        """        
+        if token_type_ids is None:
+            token_type_ids = t.zeros_like(x, dtype=t.int64)
+        pos = t.arange(x.shape[1], device=x.device)
+        x = self.word_embeddings(x) + self.position_embeddings(pos) + self.token_type_embeddings(token_type_ids)
+        x = self.LayerNorm(x)
+        x = self.dropout(x)
         return x
 
 class BERTLanguageMODEL(nn.Module):
@@ -240,9 +250,11 @@ class BERTLanguageMODEL(nn.Module):
         Return: shape (batch, seq, vocab_size)
         """
         x = self.bert(x, one_zero_attention_mask, token_type_ids)
-        x = self.GELU(self.cls(x))
-        x = self.LayerNorm(x)
-        x = einsum('word emb, b seq emb -> b seq word', self.bert.embeddings["word_embeddings"].weight, x)
+        x = self.LayerNorm(self.GELU(self.cls(x)))
+        x = einsum('batch seq emb, word emb -> batch seq word', 
+            x, 
+            self.bert.embeddings.word_embeddings.weight
+        )
         x = x + self.prediction_bias
         return x
 
@@ -291,9 +303,6 @@ def print_param_count(*models, display_df=True, use_state_dict=False):
     else:
         return df
 
-#
-# %%
-
 def copy_weights_from_bert(my_bert: nn.Module, bert) -> nn.Module:
     '''
     Copy over the weights from bert to your implementation of bert.
@@ -339,94 +348,124 @@ def copy_weights_from_bert(my_bert: nn.Module, bert) -> nn.Module:
     return my_bert
 
 
-tokenizer = transformers.AutoTokenizer.from_pretrained("bert-base-cased")
-bert = transformers.BertForMaskedLM.from_pretrained("bert-base-cased")
-my_bert = BERTLanguageMODEL(config)
-df = print_param_count(bert, my_bert, use_state_dict=False, display_df=False)
-display(df)
-my_bert = copy_weights_from_bert(my_bert, bert)
+if __name__ == "__main__":
+    tokenizer = transformers.AutoTokenizer.from_pretrained("bert-base-cased")
+    bert = transformers.BertForMaskedLM.from_pretrained("bert-base-cased")
+    my_bert = BERTLanguageMODEL(config)
+    #df = print_param_count(bert, my_bert, use_state_dict=False, display_df=False)
+    #display(df)
+    my_bert = copy_weights_from_bert(my_bert, bert)
 
-# %% 
+    # %% 
 
-# check copy weights worked.
-def replace_name(k):
-    new_k = k.replace("self.", "").replace(".predictions.transform.dense","")
-    new_k = new_k.replace("cls.predictions.bias","prediction_bias")
-    new_k = new_k.replace("cls.predictions.transform.","")
-    return new_k
+    # # check copy weights worked.
+    # def replace_name(k):
+    #     new_k = k.replace("self.", "").replace(".predictions.transform.dense","")
+    #     new_k = new_k.replace("cls.predictions.bias","prediction_bias")
+    #     new_k = new_k.replace("cls.predictions.transform.","")
+    #     return new_k
 
-names1 = df.name_1.apply(replace_name).to_list()
-names2 = df.name_2.to_list()
-for i, n_i in enumerate(names1):
-    for j, n_j in enumerate(names2):
+    # names1 = df.name_1.apply(replace_name).to_list()
+    # names2 = df.name_2.to_list()
+    # for i, n_i in enumerate(names1):
+    #     for j, n_j in enumerate(names2):
 
-        if n_i == n_j:
-            #print(i- j)
-            break
-    else:
-        print(n_i) 
+    #         if n_i == n_j:
+    #             #print(i- j)
+    #             break
+    #     else:
+    #         print(n_i) 
 
-# %%
-import plotly.express as px
+    def predict(model, tokenizer, text: str, k=15) -> List[List[str]]:
+        '''
+        Return a list of k strings for each [MASK] in the input.
+        '''
+        input_ids = tokenizer.encode(text=text, return_tensors="pt")
 
-def predict(model, tokenizer, text: str, k=15) -> List[List[str]]:
-    '''
-    Return a list of k strings for each [MASK] in the input.
-    '''
-    input_ids = tokenizer.encode(text=text, return_tensors="pt")
+        print(input_ids)
+        with t.inference_mode():
+            model.eval()
+            results = model(input_ids)
+            logits = results if isinstance(results, t.Tensor) else results.logits
+        mask_positons = (input_ids.squeeze() == 103).nonzero(as_tuple=True)[0]
+        print(mask_positons)
+        mask_token_predictions = []
+        for position in mask_positons:
+            position_completion = []
+            position_logits = logits.squeeze()[position]
+            output_ids = t.topk(position_logits, k= 15).indices
+            for id in output_ids:
+                position_completion.append(tokenizer.decode(id))
+            mask_token_predictions.append((position_completion))
+        
+        return mask_token_predictions
 
-    print(input_ids)
-    with t.inference_mode():
-        model.eval()
-        results = model(input_ids)
-        logits = results if isinstance(results, t.Tensor) else results.logits
-    mask_positons = (input_ids.squeeze() == 103).nonzero(as_tuple=True)[0]
-    print(mask_positons)
-    mask_token_predictions = []
-    for position in t.arange(input_ids.size(1)):#
-        position_completion = []
-        position_logits = logits.squeeze()[position]
-        output_ids = t.topk(position_logits, k= 15).indices
-        for id in output_ids:
-            position_completion.append(tokenizer.decode(id))
-        mask_token_predictions.append((position_completion))
-    
-    return mask_token_predictions
+    def test_bert_prediction(predict, model, tokenizer):
+        '''Your Bert should know some names of American presidents.'''
+        text = "Former President of the United States of America, George[MASK][MASK]"
+        predictions = predict(model, tokenizer, text)
+        print(f"Prompt: {text}")
+        print("Model predicted: \n", "\n".join(map(str, predictions)))
+        assert "Washington" in predictions[0]
+        assert "Bush" in predictions[0]
 
-def test_bert_prediction(predict, model, tokenizer):
-    '''Your Bert should know some names of American presidents.'''
-    text = "Former President of the United States of America, George[MASK][MASK]"
-    predictions = predict(model, tokenizer, text)
-    print(f"Prompt: {text}")
-    print("Model predicted: \n", "\n".join(map(str, predictions)))
-    assert "Washington" in predictions[0]
-    assert "Bush" in predictions[0]
+    #test_bert_prediction(predict, my_bert, tokenizer)
+    #test_bert_prediction(predict, bert, tokenizer)
 
-test_bert_prediction(predict, my_bert, tokenizer)
-#test_bert_prediction(predict, bert, tokenizer)
 
-# %%
+    # %%
+    # import transformers
 
-# %%
-# import transformers
+    # bert = transformers.BertForMaskedLM.from_pretrained("bert-base-cased")
+    # tokenizer = transformers.AutoTokenizer.from_pretrained("bert-base-cased")
 
-# bert = transformers.BertForMaskedLM.from_pretrained("bert-base-cased")
-# tokenizer = transformers.AutoTokenizer.from_pretrained("bert-base-cased")
+    # # The senetence to be encoded
+    # sent = "[MASK][MASK][MASK]"
 
-# # The senetence to be encoded
-# sent = "[MASK][MASK][MASK]"
+    # # Encode the sentence
+    # encoded_plus = tokenizer.encode_plus(
+    #     text=sent,  # the sentence to be encoded
+    #     add_special_tokens=True,  # Add [CLS] and [SEP]
+    #     max_length = 64,  # maximum length of a sentence
+    #     pad_to_max_length=True,  # Add [PAD]s
+    #     return_attention_mask = True,  # Generate the attention mask
+    #     return_tensors = 'pt',  # ask the function to return PyTorch tensors
+    # )
+    # encoded = tokenizer.encode(text=sent, return_tensors="pt")
 
-# # Encode the sentence
-# encoded_plus = tokenizer.encode_plus(
-#     text=sent,  # the sentence to be encoded
-#     add_special_tokens=True,  # Add [CLS] and [SEP]
-#     max_length = 64,  # maximum length of a sentence
-#     pad_to_max_length=True,  # Add [PAD]s
-#     return_attention_mask = True,  # Generate the attention mask
-#     return_tensors = 'pt',  # ask the function to return PyTorch tensors
-# )
-# encoded = tokenizer.encode(text=sent, return_tensors="pt")
+    # print(encoded)
+    # print(encoded_plus.input_ids)
 
-# print(encoded)
-# print(encoded_plus.input_ids)
-# # %%
+    # %%
+
+
+    sent = "The Answer to the Ultimate Question of Life, The Universe, and Everything is [MASK]."
+    encoded = tokenizer.encode(text=sent, return_tensors="pt")
+    print(bert(encoded).logits.shape)
+    px.imshow(bert(encoded).logits.detach().numpy().squeeze()).show()
+
+    sent = "The Answer to the Ultimate Question of Life, The Universe, and Everything is [MASK]."
+    encoded = tokenizer.encode(text=sent, return_tensors="pt")
+    print(my_bert(encoded).shape)
+    px.imshow(my_bert(encoded).logits.squeeze()).show()
+    # %%
+    # my_bert(encoded).max()
+    # my_bert(encoded).min()
+    # # %%
+    # bert(encoded).logits.max()
+    # bert(encoded).logits.min()
+    # %%
+
+    t.equal(bert.bert.embeddings.eval()(encoded), my_bert.bert.embeddings.eval()(encoded))
+
+    # %%
+    t.testing.assert_close(
+        bert.bert.embeddings.eval()(encoded), my_bert.bert.embeddings.eval()(encoded)
+    )
+    # %%
+    x_embedding = bert.bert.embeddings.eval()(encoded)
+
+    t.testing.assert_close(
+        bert.bert.encoder.layer[0](x_embedding)[0], 
+        my_bert.bert.encoder.layer[0](x_embedding)
+    )
