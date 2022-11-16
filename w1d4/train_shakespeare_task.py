@@ -13,25 +13,25 @@ print(f"default data type: {t.get_default_dtype()}")
 if __name__ == '__main__':
 
     config = {
-    'batch_size': 16,
+    'batch_size': 64,
     'hidden_size': 512,
-    'lr': 0.00125,
-    'seq_len': 40,
+    'lr': 6e-4,
+    'seq_len': 128,
     'num_layers': 8,
     'num_heads': 8,
-    'vocab_size': None,
+    'vocab_size': 34543,
     'num_epochs': 1,
-    'device': 'mps',
+    'device': 'cpu',
     'dropout': 0.1,
-    'layer_norm_epsilon': 1e-4,
-    'train_set_size': 2 * 10**4,
-    'test_set_size': 10000,
+    'layer_norm_epsilon': 1e-5,
+    'train_set_size': 50 * 10**4,
+    'test_set_size': 1000,
     'num_workers': 0,
     }
 
     wandb.init(project="W1D3 Shakespeare Transformer Tilman and Joseph",
             entity="arena-ldn",
-            name ="MPS - Rescale embedding Variance - batch size 16, seq len 40",
+            #name ="MPS - Rescale embedding Variance - batch size 16, seq len 120",
             config=config)
 
     # get data
@@ -46,20 +46,19 @@ if __name__ == '__main__':
     
     test_dataset = WordDataset(shakespeare_text,
                         block_size=wandb.config.seq_len,
-                        overwrite_length=train_set_size)
-
-    wandb.config.update({"vocab_size": train_dataset.vocab_size},
-                        allow_val_change=True)
+                        overwrite_length=test_set_size)
 
     word_tokenizer = WordsTokenizer(train_dataset)
     trainloader = DataLoader(train_dataset,
                             batch_size=wandb.config.batch_size,
                             shuffle=True,
+                            pin_memory=True,
                             num_workers=wandb.config.num_workers)
 
     testloader = DataLoader(test_dataset,
                             batch_size=wandb.config.batch_size,
                             shuffle=True,
+                            pin_memory=True,
                             num_workers=wandb.config.num_workers)
 
 

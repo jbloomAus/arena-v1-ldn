@@ -71,7 +71,7 @@ def test_model(model, testloader, device):
     num_total = 0
 
     with t.inference_mode():
-        for (x,y) in testloader:
+        for i, (x,y) in tqdm(enumerate(testloader)):
 
             x = x.to(device)
             y = y.to(device)
