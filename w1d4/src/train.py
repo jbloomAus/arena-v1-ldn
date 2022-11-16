@@ -4,7 +4,7 @@ import torch as t
 from tqdm import tqdm 
 import wandb
 
-def train(model, tokenizer, optimizer, trainloader, testloader, criterion, num_epochs=10, device = "mps"):
+def train(model, tokenizer, optimizer, trainloader, testloader, criterion, num_epochs=10, device = "mps", gradient_clipping=None):
 
     examples_seen = 0
     since = time.time()
@@ -40,7 +40,9 @@ def train(model, tokenizer, optimizer, trainloader, testloader, criterion, num_e
             wandb.log({"train_loss": training_loss, "elapsed": time.time() - since}, step=examples_seen)
             
             training_loss.backward()
-            #t.nn.utils.clip_grad_value_(model.parameters(), clip_value = 1.0)
+            if gradient_clipping is not None:
+                t.nn.utils.clip_grad_norm_(model.parameters(), gradient_clipping)
+                #t.nn.utils.clip_grad_value_(model.parameters(), clip_value = gradient_clipping)
             optimizer.step()
             optimizer.zero_grad()
         

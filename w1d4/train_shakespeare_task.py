@@ -13,7 +13,7 @@ print(f"default data type: {t.get_default_dtype()}")
 if __name__ == '__main__':
 
     config = {
-    'batch_size': 64,
+    'batch_size': 16,
     'hidden_size': 512,
     'lr': 6e-4,
     'seq_len': 128,
@@ -24,9 +24,11 @@ if __name__ == '__main__':
     'device': 'cpu',
     'dropout': 0.1,
     'layer_norm_epsilon': 1e-5,
-    'train_set_size': 50 * 10**4,
+    'train_set_size': 2 * 2*10**4,
     'test_set_size': 1000,
     'num_workers': 0,
+    'weight_decay': 0.0,
+    'gradient_clipping': None,
     }
 
     wandb.init(project="W1D3 Shakespeare Transformer Tilman and Joseph",
@@ -38,7 +40,7 @@ if __name__ == '__main__':
     train_set_size = wandb.config.train_set_size
     test_set_size = wandb.config.test_set_size
 
-    shakespeare_text = open('w1d3/shakespeare.txt', 'r').read()
+    shakespeare_text = open('/Users/josephbloom/GithubRepositories/arena-v1-ldn/w1d3/shakespeare.txt', 'r').read()
 
     train_dataset = WordDataset(shakespeare_text,
                           block_size=wandb.config.seq_len,
@@ -83,7 +85,7 @@ if __name__ == '__main__':
     num_epochs = wandb.config.num_epochs
     device = t.device(wandb.config.device)
     criterion = nn.CrossEntropyLoss()
-    optimizer = t.optim.Adam(model.parameters(), lr=wandb.config.lr)
+    optimizer = t.optim.Adam(model.parameters(), lr=wandb.config.lr, weight_decay=wandb.config.weight_decay)
     model = train(model,
                   word_tokenizer,
                   optimizer,
@@ -91,4 +93,5 @@ if __name__ == '__main__':
                   testloader,
                   criterion,
                   num_epochs=num_epochs,
-                  device=device)
+                  device=device,
+                  gradient_clipping=wandb.config.gradient_clipping)
