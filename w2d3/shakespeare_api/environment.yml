@@ -17,3 +17,4 @@ dependencies:
   - pip: 
     - einops==0.5.0
     - fancy-einsum==0.0.3
+    - gradio==3.9.1
