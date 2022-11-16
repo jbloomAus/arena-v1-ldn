@@ -168,3 +168,6 @@ w0d5/dev2.py
 w1d3/shakespeare.txt
 
 wandb/
+
+*.pt
+data/
