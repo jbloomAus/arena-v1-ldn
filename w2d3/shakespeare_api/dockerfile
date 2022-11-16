@@ -1,0 +1,54 @@
+# # start by pulling the python image
+# FROM python:3.10-alpine
+
+# RUN ls -larth
+
+# ARG NREPEATS=10
+
+# RUN echo "The number of repeats is $NREPEATS"
+
+# # copy the requirements file into the image
+# COPY ./requirements.txt /app/requirements.txt
+
+# # switch working directory
+# WORKDIR /app
+
+# RUN ls -larth
+
+# # install the dependencies and packages in the requirements file
+# RUN apk update
+# RUN apk add make automake gcc g++ subversion python3-dev
+# RUN pip install --upgrade pip
+# RUN pip install -r requirements.txt
+
+# # copy every content from the local file to the image
+# COPY app /app
+# # COPY templates /app
+
+# RUN ls -larth
+
+# # configure the container to run in an executed manner
+# ENTRYPOINT [ "python" ]
+
+# CMD ["greeting.py" ]
+
+FROM continuumio/miniconda3
+
+# Create the environment:
+COPY environment.yml .
+RUN conda env create -f environment.yml
+
+# Make RUN commands use the new environment:
+SHELL ["conda", "run", "-n", "arena", "/bin/bash", "-c"]
+
+# Activate the environment, and make sure it's activated:
+RUN echo "Make sure flask is installed:"
+RUN python -c "import flask"
+
+COPY app /app
+COPY models /models
+COPY data /data
+ENV NREPEATS=7
+
+ENV PATH /opt/conda/envs/arena/bin:$PATH
+CMD ["bash", "-c", "source activate arena && python app/app.py"]
