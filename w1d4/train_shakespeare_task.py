@@ -24,8 +24,8 @@ if __name__ == '__main__':
     'device': 'cpu',
     'dropout': 0.1,
     'layer_norm_epsilon': 1e-5,
-    'train_set_size': 2 * 2*10**4,
-    'test_set_size': 1000,
+    'train_set_size': 12*10**5,
+    'test_set_size': 10**4,
     'num_workers': 0,
     'weight_decay': 0.0,
     'gradient_clipping': None,
@@ -33,6 +33,7 @@ if __name__ == '__main__':
 
     wandb.init(project="W1D3 Shakespeare Transformer Tilman and Joseph",
             entity="arena-ldn",
+            name = "new non-overlapping dataset",
             #name ="MPS - Rescale embedding Variance - batch size 16, seq len 120",
             config=config)
 
@@ -45,10 +46,12 @@ if __name__ == '__main__':
     train_dataset = WordDataset(shakespeare_text,
                           block_size=wandb.config.seq_len,
                           overwrite_length=train_set_size)
+    print(train_dataset)
     
     test_dataset = WordDataset(shakespeare_text,
                         block_size=wandb.config.seq_len,
                         overwrite_length=test_set_size)
+    print(test_dataset)
 
     word_tokenizer = WordsTokenizer(train_dataset)
     trainloader = DataLoader(train_dataset,
