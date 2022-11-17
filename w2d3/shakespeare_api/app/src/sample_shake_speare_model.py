@@ -39,8 +39,8 @@ train_dataset = WordDataset(shakespeare_text,
 tokenizer = WordsTokenizer(train_dataset)
 my_gpt = DecoderOnlyTransformer(config=transformer_config)
 
-PATH = "/models/language_model.pt"
-my_gpt.load_state_dict(t.load(PATH))
+PATH = "/models/language_model_high_quality.pt"
+my_gpt.load_state_dict(t.load(PATH, map_location=t.device('cpu')))
 my_gpt.eval()
 
 # initial_text = "turn down for what"
