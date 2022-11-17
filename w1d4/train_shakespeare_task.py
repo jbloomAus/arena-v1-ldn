@@ -13,7 +13,7 @@ print(f"default data type: {t.get_default_dtype()}")
 if __name__ == '__main__':
 
     config = {
-    'batch_size': 16,
+    'batch_size': 64,
     'hidden_size': 512,
     'lr': 6e-4,
     'seq_len': 128,

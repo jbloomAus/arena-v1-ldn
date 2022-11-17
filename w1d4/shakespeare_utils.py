@@ -84,7 +84,7 @@ class WordDataset(Dataset):
         assert self.data_size // self.block_size - 2  > 0, "Block size is too large for the data"
 
     def __len__(self):
-        return (self.data_size // self.block_size)  # don't give it a tiny end string
+        return (self.data_size // self.block_size) - 1 # don't give it a tiny end string
 
     def __getitem__(self, idx):
 
