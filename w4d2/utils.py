@@ -1,15 +1,10 @@
 import numpy as np
 import torch as t
-from typing import Optional, Union
 import gym
 import gym.spaces
 import gym.envs.registration
-from gym.utils import seeding
-import matplotlib.pyplot as plt
-from tqdm.auto import tqdm
-from w3d5_chapter4_tabular.utils import make_env, set_seed
-from w3d5_chapter4_tabular.solutions import Norvig, policy_eval_exact
-from w4d2_chapter4_dqn import solutions
+from utils_previous_day import make_env, set_seed
+import solutions
 from typing import Tuple
 from dataclasses import asdict
 

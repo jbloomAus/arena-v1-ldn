@@ -23,8 +23,8 @@ from numpy.random import Generator
 import gym.envs.registration
 import pandas as pd
 
-from w3d5_chapter4_tabular.utils import make_env
-from w4d2_chapter4_dqn import utils
+from utils_previous_day import make_env
+import utils
 
 MAIN = __name__ == "__main__"
 os.environ["SDL_VIDEODRIVER"] = "dummy"
