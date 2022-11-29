@@ -23,6 +23,8 @@ from numpy.random import Generator
 import gym.envs.registration
 import pandas as pd
 
+t.set_default_dtype(t.float64)
+
 from utils_previous_day import make_env
 import utils
 
