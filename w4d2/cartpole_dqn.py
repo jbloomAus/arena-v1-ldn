@@ -525,22 +525,22 @@ def log(
         #         writer.add_scalar("charts/epsilon", epsilon, step)
         #         break
 
-        if "episode" in infos.keys():
-            for env in range(len(infos["episode"])):
-                
-                print(
-                    f"env={env}, global_step={step}, episodic_return={infos['episode'][env]['r']}")
-                writer.add_scalar("charts/episodic_return", infos["episode"][env]["r"],
-                                step)
-                writer.add_scalar("charts/episodic_length", infos["episode"][env]["l"],
-                                step)
-                writer.add_scalar("charts/epsilon", epsilon, step)
-                break
+    if "episode" in infos.keys():
+        for env in range(len(infos["episode"])):
+            
+            print(
+                f"env={env}, global_step={step}, episodic_return={infos['episode'][env]['r']}")
+            writer.add_scalar("charts/episodic_return", infos["episode"][env]["r"],
+                            step)
+            writer.add_scalar("charts/episodic_length", infos["episode"][env]["l"],
+                            step)
+            writer.add_scalar("charts/epsilon", epsilon, step)
+            break
 
-        if args.track:
-            import wandb
-            wandb.log({"loss": loss}, step=step)
-            wandb.log({"epsilon": epsilon}, step=step)
+    if args.track:
+        import wandb
+        wandb.log({"loss": loss}, step=step)
+        wandb.log({"epsilon": epsilon}, step=step)
 
 
 def train_dqn(args: DQNArgs):
@@ -549,7 +549,11 @@ def train_dqn(args: DQNArgs):
 
     obs_shape = envs.observation_space.shape[-1]
     num_actions = envs.single_action_space.n
-    q_network = QNetwork(obs_shape, num_actions)
+    q_network = QNetwork(obs_shape, num_actions).to(device)
+
+    target_network = QNetwork(obs_shape, num_actions).to(device)
+    target_network.load_state_dict(q_network.state_dict())
+
     optimizer = optim.Adam(q_network.parameters(), args.learning_rate)
     replay_buffer = ReplayBuffer(args.buffer_size,
                                  num_actions,
@@ -572,6 +576,9 @@ def train_dqn(args: DQNArgs):
         actions = epsilon_greedy_policy(envs, q_network, rng, t.tensor(obs), epsilon)
         (next_obs, rewards, dones, infos) = envs.step(actions)
 
+        # # replace rewards with dones[3]
+        # rewards = np.array([next_obs[0][3]])
+
         replay_buffer.add(obs, actions, rewards, dones, next_obs)
         obs = next_obs
         if step > args.learning_starts and step % args.train_frequency == 0:
@@ -580,7 +587,7 @@ def train_dqn(args: DQNArgs):
             samples = replay_buffer.sample(args.batch_size, device=device)
 
             with t.inference_mode():
-                predicted_q_vals = q_network(samples.next_observations).max(dim=1).values
+                predicted_q_vals = target_network(samples.next_observations).max(dim=1).values
                 y = samples.rewards + args.gamma * predicted_q_vals * ~samples.dones.bool()
 
 
@@ -590,7 +597,9 @@ def train_dqn(args: DQNArgs):
             q_network.zero_grad()
             loss.backward()
             optimizer.step()
-            
+            if step % args.target_network_frequency == 0:
+                target_network.load_state_dict(q_network.state_dict())
+        
             # if isinstance(infos, dict):
             #     infos = [infos]
             log(writer, start_time, step, predicted_q_vals, loss, infos,
