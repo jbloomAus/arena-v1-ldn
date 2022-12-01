@@ -32,6 +32,7 @@ MAIN = __name__ == "__main__"
 
 
 from gym.envs.classic_control.cartpole import CartPoleEnv
+from gym.envs.classic_control.mountain_car import MountainCarEnv
 import gym
 from gym import logger, spaces
 from gym.error import DependencyNotInstalled
@@ -46,8 +47,28 @@ class EasyCart(CartPoleEnv):
         # reward = 1 - (next_obs[:, 0]/2.4)**2 # reward shaping x-location
         return obs, rew, done, truncated, info
 
-
 gym.envs.registration.register(id="EasyCart-v0", entry_point=EasyCart, max_episode_steps=1000)
+
+class EasyMountainCart(MountainCarEnv):
+    def step(self, action):
+        (obs, rew, done, truncated, info) = super().step(action)
+        
+
+        position, velocity = obs
+
+        height = self._height(position)
+
+        #rew = self.gravity*height + 0.05*velocity/math.cos(theta)# reward h
+        coeff_velocity = 100
+        rew = rew +  (coeff_velocity*0.5*(velocity**2)*(1+(1.35*math.cos(3*position))**2)+self.gravity*height)/0.01
+        
+        # weight towards spinnging
+        # reward = 1 - np.abs(next_obs[:,2]/(12 * 2 * math.pi / 360)) # reward shaping angel
+        # reward = 1 - (next_obs[:, 0]/2.4)**2 # reward shaping x-location
+        return obs, rew, done, truncated, info
+
+
+gym.envs.registration.register(id="EasyMountainCart-v0", entry_point=EasyMountainCart, max_episode_steps=200)
 
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
     t.nn.init.orthogonal_(layer.weight, std)
@@ -409,6 +430,7 @@ def train_ppo(args):
 
                 # now get ready to do standard backward pass with losses
                 total_loss = policy_loss - value_loss + entropy_loss
+                #total_loss = policy_loss + entropy_loss # (experiment with no value loss)
                 optimizer.zero_grad()
                 total_loss.backward()
                 nn.utils.clip_grad_norm_(agent.parameters(), args.max_grad_norm)
@@ -453,23 +475,23 @@ if MAIN:
     # print(args)
 
 
-    args = PPOArgs(
-        env_id="CartPole-v1",
-        exp_name="CartPole - Gamma -0",
-        track=True,
-        capture_video=True
-    )
     # args = PPOArgs(
-    #     env_id="MountainCar-v0",
-    #     exp_name="Mountain Car tuned parameters",
+    #     env_id="CartPole-v1",
+    #     exp_name="CartPole - Gamma -0",
     #     track=True,
-    #     capture_video=True,
-    #     max_grad_norm=5, 
-    #     vf_coef=0.19,
-    #     gamma=0.9999,
-    #     gae_lambda=0.9,
-    #     learning_rate=7.77e-05,
-    #     ent_coef=0.5,
-    #     clip_coef=0.1
+    #     capture_video=True
     # )
+    args = PPOArgs(
+        env_id="EasyMountainCart-v0",
+        exp_name="Mountain Car tuned parameters, first pass reward hacking",
+        track=True,
+        capture_video=True,
+        max_grad_norm=5, 
+        vf_coef=0.19,
+        gamma=0.9999,
+        gae_lambda=0.9,
+        learning_rate=7.77e-04,
+        ent_coef=0.00429,
+        clip_coef=0.1
+    )
     train_ppo(args)
