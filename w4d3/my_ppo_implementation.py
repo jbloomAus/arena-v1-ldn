@@ -24,6 +24,7 @@ from tests import (test_agent, test_calc_entropy_loss, test_calc_policy_loss,
                    test_calc_value_function_loss, test_compute_advantages,
                    test_minibatch_indexes)
 from torch.distributions.categorical import Categorical
+from torch.distributions.normal import Normal
 from torch.utils.tensorboard import SummaryWriter
 from utils import make_env, ppo_parse_args
 import math
@@ -33,6 +34,7 @@ MAIN = __name__ == "__main__"
 
 from gym.envs.classic_control.cartpole import CartPoleEnv
 from gym.envs.classic_control.mountain_car import MountainCarEnv
+from gym.envs.classic_control.continuous_mountain_car import Continuous_MountainCarEnv
 import gym
 from gym import logger, spaces
 from gym.error import DependencyNotInstalled
@@ -67,8 +69,30 @@ class EasyMountainCart(MountainCarEnv):
         # reward = 1 - (next_obs[:, 0]/2.4)**2 # reward shaping x-location
         return obs, rew, done, truncated, info
 
-
 gym.envs.registration.register(id="EasyMountainCart-v0", entry_point=EasyMountainCart, max_episode_steps=200)
+
+class EasyMountainCartContinuous(Continuous_MountainCarEnv):
+    def __init__(self):
+        super().__init__()
+        self.gravity = 0.0025
+    def step(self, action):
+        (obs, rew, done, truncated, info) = super().step(action)
+        
+
+        position, velocity = obs
+
+        height = self._height(position)
+
+        #rew = self.gravity*height + 0.05*velocity/math.cos(theta)# reward h
+        coeff_velocity = 100
+        rew = rew +  (coeff_velocity*0.5*(velocity**2)*(1+(1.35*math.cos(3*position))**2)+self.gravity*height)/0.01
+        
+        # weight towards spinnging
+        # reward = 1 - np.abs(next_obs[:,2]/(12 * 2 * math.pi / 360)) # reward shaping angel
+        # reward = 1 - (next_obs[:, 0]/2.4)**2 # reward shaping x-location
+        return obs, rew, done, truncated, info
+
+gym.envs.registration.register(id="EasyMountainCartContinuous-v0", entry_point=EasyMountainCartContinuous, max_episode_steps=200)
 
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
     t.nn.init.orthogonal_(layer.weight, std)
@@ -82,7 +106,10 @@ class Agent(nn.Module):
     def __init__(self, envs: gym.vector.SyncVectorEnv, hidden_size=64):
         super().__init__()
         obs_space_size = envs.single_observation_space.shape[0]
-        action_space_size = envs.single_action_space.n
+        
+        action_space_type_continuous = isinstance(envs.single_action_space, gym.spaces.box.Box)
+
+        action_space_size = int(np.prod(envs.single_action_space.shape))
 
         self.actor = nn.Sequential(
             layer_init(nn.Linear(obs_space_size, hidden_size)), nn.Tanh(),
@@ -94,7 +121,9 @@ class Agent(nn.Module):
             layer_init(nn.Linear(hidden_size, hidden_size)), nn.Tanh(),
             layer_init(nn.Linear(hidden_size, 1), std=1))
 
-test_agent(Agent)
+        self.logstd = nn.Parameter(t.zeros(1,action_space_size))
+
+# test_agent(Agent)
 
 @t.inference_mode()
 def compute_advantages(
@@ -193,7 +222,7 @@ def make_minibatches(
 
 test_minibatch_indexes(minibatch_indexes)
 
-def calc_policy_loss(probs: Categorical, mb_action: t.Tensor,
+def calc_policy_loss(probs: Union[Categorical, Normal], mb_action: t.Tensor,
                      mb_advantages: t.Tensor, mb_logprobs: t.Tensor,
                      clip_coef: float) -> t.Tensor:
     '''Return the policy loss, suitable for maximisation with gradient ascent.
@@ -211,7 +240,10 @@ def calc_policy_loss(probs: Categorical, mb_action: t.Tensor,
                      mb_advantages.mean()) / (mb_advantages.std() + 1e-8)
 
     # get log probs of old model
-    logprobs_old = probs.log_prob(mb_action)
+    if isinstance(probs, Categorical):
+        logprobs_old = probs.log_prob(mb_action)
+    else:
+        logprobs_old = probs.log_prob(mb_action).sum(axis=1)
 
     # calculated likelihood ratio
     ratio = torch.exp(logprobs_old - mb_logprobs)
@@ -237,7 +269,7 @@ def calc_value_function_loss(critic: nn.Sequential, mb_obs: t.Tensor,
 
 test_calc_value_function_loss(calc_value_function_loss)
 
-def calc_entropy_loss(probs: Categorical, ent_coef: float):
+def calc_entropy_loss(probs: Union[Categorical, Normal], ent_coef: float):
     '''Return the entropy loss term.
 
     ent_coef: the coefficient for the entropy loss, which weights its contribution to the overall loss. Denoted by c_2 in the paper.
@@ -328,8 +360,15 @@ def train_ppo(args):
     ])
     action_shape = envs.single_action_space.shape
     assert action_shape is not None
-    assert isinstance(envs.single_action_space,
-                      Discrete), "only discrete action space is supported"
+    # assert isinstance(envs.single_action_space,
+    #                   Discrete), "only discrete action space is supported"
+    if isinstance(envs.single_action_space, gym.spaces.box.Box):
+        action_space_type = 'Continuous'
+        print('Continuous Action Space Type!')
+    else:
+        print('Discrete Action Space')
+
+
     agent = Agent(envs).to(device)
     num_updates = args.total_timesteps // args.batch_size
     (optimizer, scheduler) = make_optimizer(agent, num_updates,
@@ -366,16 +405,28 @@ def train_ppo(args):
             # actor provides dist over actions
             with t.inference_mode():
                 next_values = agent.critic(next_obs).flatten()
-                logits = agent.actor(next_obs)
+                
+                
+                if action_space_type == "Continuous":
+                    means = agent.actor(next_obs)
+                    probs = Normal(means, agent.logstd.exp().expand_as(means))
+                    action = probs.sample()  # wait
+                    logprobs[i] = probs.log_prob(action).sum(1)
 
-            # pick an actual action though
-            probs = Categorical(logits=logits)
-            action = probs.sample()  # wait
+                else:
+                    logits = agent.actor(next_obs)
+                    # pick an actual action though
+                    probs = Categorical(logits=logits)
+                    action = probs.sample()  # wait
+                    logprobs[i] = probs.log_prob(action)
+            
+           
+
             next_obs, reward, done, info = envs.step(action.cpu().numpy())
 
             # store all the results, casting from numpy where appropriate.
             rewards[i] = t.from_numpy(reward)
-            logprobs[i] = probs.log_prob(action)
+            
             actions[i] = action
             values[i] = next_values
 
@@ -419,7 +470,12 @@ def train_ppo(args):
 
                 # for starter, let's get the "old probs"
                 logits = agent.actor(mb.obs)
-                probs = Categorical(logits=logits)
+                # probs = Categorical(logits=logits)
+                if action_space_type == "Continuous":
+                    means = agent.actor(mb.obs)
+                    probs = Normal(means, agent.logstd.exp().expand_as(means))
+                else:
+                    probs = Categorical(logits=logits)
 
                 value_loss = calc_value_function_loss(agent.critic, mb.obs,
                                                       mb.returns, args.vf_coef)
@@ -482,8 +538,8 @@ if MAIN:
     #     capture_video=True
     # )
     args = PPOArgs(
-        env_id="EasyMountainCart-v0",
-        exp_name="Mountain Car tuned parameters, first pass reward hacking",
+        env_id="EasyMountainCartContinuous-v0",
+        exp_name="Easy Continuous Mountain car",
         track=True,
         capture_video=True,
         max_grad_norm=5, 
