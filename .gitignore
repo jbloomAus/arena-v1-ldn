@@ -171,3 +171,5 @@ wandb/
 
 *.pt
 data/
+w5/img_align_celeba.zip
+w5/img_align_celeba
