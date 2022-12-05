@@ -649,7 +649,7 @@ if MAIN:
         gamma=0.999,
         gae_lambda=0.95,
         learning_rate=5e-04,
-        ent_coef=0.01,
+        ent_coef= 1,
         clip_coef=0.2,
         num_envs=8,
         num_minibatches=8,
