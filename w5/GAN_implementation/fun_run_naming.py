@@ -1,6 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 import random
+import numpy as np
 
 # use requests to download the page
 
@@ -17,25 +18,23 @@ name_list = []
 for h3 in h3s[:-9]:
     # print(h3.get_text().strip().replace("[edit]", ""))
     name_list.append(h3.get_text().strip().replace("[edit]", ""))
+
 # print(name_list)
+name_list = [name.replace("\"", "")for name in name_list]
 
 # split all names on spaces
 name_list = [name.split(" ") for name in name_list]
-# flatten list
-name_list = [name for names in name_list for name in names]
-# remove apostrophes
-name_list = [name.replace("\"", "") for name in name_list]
-# remove empty strings or strings with only punctuation
-name_list = [name for name in name_list if name.isalpha()]
-
-
-def get_random_name_pair(name_list):
-    name1 = random.choice(name_list)
-    name2 = random.choice(name_list)
-    while name1 == name2:
-        name2 = random.choice(name_list)
-    return name1 + " " + name2
-
+# get first names, last names and single names each as their own list
+first_names = [name[0] for name in name_list if len(name) > 1]
+last_names = [name[-1] for name in name_list if len(name) > 1]
+single_names = [name[0] for name in name_list if len(name) == 1]
 
 def get_random_name():
     return random.choice(name_list) + " " + random.choice(name_list)
+
+
+def get_random_name():
+    if np.random.rand() < 0.7:
+        return np.random.choice(first_names) + " " + np.random.choice(last_names)
+    else:
+        return np.random.choice(single_names)
