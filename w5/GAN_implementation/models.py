@@ -97,3 +97,26 @@ class Discriminator(nn.Module):
         x = self.sigmoid(x)
         
         return x
+
+
+def initialize_weights_generator(model) -> None:
+    for name, param in model.named_parameters():
+        # print(name)
+        if (len(param.shape) == 1) and ("project" not in name): # batch norms (and project and reshape)
+            if "weight" in name:
+                nn.init.normal_(param, 1, 0.02)
+            else:
+                assert "bias" in name 
+                nn.init.constant_(param, 0)
+        else:
+            nn.init.normal_(param, 0, 0.02)
+
+def initialize_weights_discriminator(model) -> None:
+    for name, param in model.named_parameters():
+        # print(name)
+        if "1.weight" in name: # batchnorm wieght
+            nn.init.normal_(param, 1, 0.02)
+        elif "1.bias" in name: # batchnorm bias
+            nn.init.constant_(param, 0)
+        else: # anything else
+            nn.init.normal_(param, 0, 0.02)
