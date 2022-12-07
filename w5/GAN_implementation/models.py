@@ -1,6 +1,6 @@
 import torch as t
 import torch.nn as nn
-from .layers import ConvTranspose2d
+# from .layers import ConvTranspose2d
 from einops.layers.torch import Rearrange
 from collections import OrderedDict
 # from GAN_implementation.layers import Conv2d, ConvTranspose2d
@@ -22,13 +22,14 @@ class Generator(nn.Module):
         self.generator_num_features = generator_num_features
         self.n_layers = n_layers
 
-        # self.projection = nn.Linear(self.latent_dim_size, self.generator_num_features*4*4)
-        self.activation = nn.ReLU()
+        first_height = img_size//(2**n_layers)
+        first_width = img_size//(2**n_layers)
+        first_size = first_height*first_width*generator_num_features
 
         # start by project and reshape
         self.project_and_reshape = nn.Sequential(
-            nn.Linear(latent_dim_size, self.generator_num_features * 4 * 4, bias=False),
-            Rearrange("b (ic h w) -> b ic h w", h=4, w=4),
+            nn.Linear(latent_dim_size, first_size, bias=False),
+            Rearrange("b (ic h w) -> b ic h w", h=first_height, w=first_width),
             nn.BatchNorm2d(generator_num_features),
             nn.ReLU(),
         )
@@ -40,14 +41,16 @@ class Generator(nn.Module):
                 kernel_size = 4,
                 stride = 2,
                 padding = 1,
+                bias=   False,
             )
+
         # use an nn.Sequential to stack the layers
         self.layers = []
         for i in range(self.n_layers):
             layer = nn.Sequential(OrderedDict([
                 ("conv", get_layer_i(i)),
                 ("bn", nn.BatchNorm2d(self.generator_num_features//(2*2**i)) if i < self.n_layers-1 else nn.Identity()),
-                ("relu", nn.ReLU())
+                ("relu", nn.ReLU() if i < self.n_layers-1 else nn.Identity())
             ]))
             self.layers.append(layer)
 
