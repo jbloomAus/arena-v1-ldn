@@ -2,6 +2,9 @@ import torch as t
 import torch.nn as nn
 from .layers import ConvTranspose2d
 from einops.layers.torch import Rearrange
+from collections import OrderedDict
+# from GAN_implementation.layers import Conv2d, ConvTranspose2d
+from torch.nn import Conv2d, ConvTranspose2d
 class Generator(nn.Module):
 
     def __init__(
@@ -39,11 +42,15 @@ class Generator(nn.Module):
                 padding = 1,
             )
         # use an nn.Sequential to stack the layers
-        self.layers = [
-            nn.Sequential(*[get_layer_i(i), 
-            nn.BatchNorm2d(self.generator_num_features//(2*2**i)) if i < self.n_layers-1 else nn.Identity(),
-            nn.ReLU()]) 
-            for i in range(self.n_layers)]
+        self.layers = []
+        for i in range(self.n_layers):
+            layer = nn.Sequential(OrderedDict([
+                ("conv", get_layer_i(i)),
+                ("bn", nn.BatchNorm2d(self.generator_num_features//(2*2**i)) if i < self.n_layers-1 else nn.Identity()),
+                ("relu", nn.ReLU())
+            ]))
+            self.layers.append(layer)
+
         self.layers = nn.Sequential(*self.layers)
         self.tanh = nn.Tanh()
 
@@ -69,6 +76,7 @@ class Discriminator(nn.Module):
         self.n_layers = n_layers
 
         self.activation = nn.LeakyReLU(0.2)
+        self.rearrange = Rearrange("b ic h w -> b (ic h w)")
 
         def get_layer_i(i):
             return nn.Conv2d(
@@ -79,11 +87,16 @@ class Discriminator(nn.Module):
                 padding = 1,
             )
         # use an nn.Sequential to stack the layers
-        self.layers = [
-            nn.Sequential(*[get_layer_i(i),
-            nn.BatchNorm2d(self.generator_num_features//(2**(self.n_layers-i-1))) if i != 0  else nn.Identity(),
-            nn.LeakyReLU(0.2)])
-            for i in range(self.n_layers)]
+        self.layers = []
+        for i in range(self.n_layers):
+            layer = nn.Sequential(OrderedDict(
+                [
+                    ("conv", get_layer_i(i)),
+                    ("bn", nn.BatchNorm2d(self.generator_num_features//(2**(self.n_layers-i-1))) if i != 0 else nn.Identity()),
+                    ("relu", nn.LeakyReLU(0.2)),
+                ]
+            ))
+            self.layers.append(layer)
         
         self.layers = nn.Sequential(*self.layers)
         self.linear = nn.Linear(self.generator_num_features*4*4, 1, bias=False)
@@ -92,31 +105,30 @@ class Discriminator(nn.Module):
 
     def forward(self, x: t.Tensor):
         x = self.layers(x)
-        x = x.view(x.shape[0], -1)
+        x = self.rearrange(x)
         x = self.linear(x)
         x = self.sigmoid(x)
         
         return x
 
 
-def initialize_weights_generator(model) -> None:
-    for name, param in model.named_parameters():
-        # print(name)
-        if (len(param.shape) == 1) and ("project" not in name): # batch norms (and project and reshape)
-            if "weight" in name:
-                nn.init.normal_(param, 1, 0.02)
-            else:
-                assert "bias" in name 
-                nn.init.constant_(param, 0)
-        else:
-            nn.init.normal_(param, 0, 0.02)
 
-def initialize_weights_discriminator(model) -> None:
-    for name, param in model.named_parameters():
-        # print(name)
-        if "1.weight" in name: # batchnorm wieght
-            nn.init.normal_(param, 1, 0.02)
-        elif "1.bias" in name: # batchnorm bias
-            nn.init.constant_(param, 0)
-        else: # anything else
-            nn.init.normal_(param, 0, 0.02)
+def initialize_weights_discriminator(model: nn.Module) -> None:
+    for i in model.modules():
+        if isinstance(i, Conv2d):
+            nn.init.normal_(i.weight, 0.0, 0.02)
+            if i.bias is not None:
+                nn.init.constant_(i.bias, 0)
+        elif isinstance(i, nn.BatchNorm2d):
+            nn.init.normal_(i.weight, 1.0, 0.02)
+            nn.init.constant_(i.bias, 0)
+        
+
+import torch.nn as nn
+def initialize_weights_generator(model) -> None:
+    for i in model.modules():
+        if isinstance(i, ConvTranspose2d):
+            nn.init.normal_(i.weight, 0.0, 0.02)
+        elif isinstance(i, nn.BatchNorm2d):
+            nn.init.normal_(i.weight, 1.0, 0.02)
+            nn.init.constant_(i.bias, 0)

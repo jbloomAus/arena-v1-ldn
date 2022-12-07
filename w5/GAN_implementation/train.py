@@ -40,18 +40,20 @@ def train_generator_discriminator(
         pbar = tqdm(enumerate(trainloader, 0), total=len(trainloader))
         for i, data in pbar:
 
-            
+
+            netG.train()
             noise = t.randn(trainloader.batch_size, latent_dim_size, device=device)
             
             # 1. Train the discriminator on real+fake
             optD.zero_grad()
             # 1A. Train on real
-            real_images = data[0]
+            real_images = data[0].to(device)
             D_x = netD(real_images)
             fake_images = netG(noise)
             D_G_z1 = netD(fake_images.detach())
             lossD = - (t.log(D_x).mean() + t.log(1 - D_G_z1).mean())
             lossD.backward()
+            # nn.utils.clip_grad_norm_(netD.parameters(), 0.01)
             optD.step()
 
             # 2. Train the generator (maximize log(D(G(z))))
@@ -59,14 +61,16 @@ def train_generator_discriminator(
             D_G_z2 = netD(fake_images)
             lossG = - (t.log(D_G_z2).mean())
             lossG.backward()
+            # nn.utils.clip_grad_norm_(netG.parameters(), 0.01)
             optG.step()
 
             # 3. Log metrics
             pbar.set_description(
-                f"Epoch: {epoch}, Iteration: {i}, Mean D loss: {lossD.mean().item():.2f}, Mean G loss: {lossG.mean().item():.2f}"
+                f"Epoch: {epoch}, Iteration: {i}, Mean D loss: {lossD.mean().item():.4f}, Mean G loss: {lossG.mean().item():.4f}"
             )
             examples_seen += real_images.size(0)
 
+            netG.eval()
             if use_wandb:
                 wandb.log({
                     "Debug/D(x)": D_x.mean().item(),
@@ -77,16 +81,16 @@ def train_generator_discriminator(
                     "Metrics/Examples seen": examples_seen
                 })
 
-            if i % log_netG_output_interval == 0:
-                with t.no_grad():
-                    fake = netG(fixed_noise).detach().cpu()
-                wandb.log({
-                    "images": [
-                        wandb.Image(x,
-                                    caption="epoch: " + str(epoch) +
-                                    " iteration: " + str(i)) for x in fake
-                    ]
-                })
+                if i % log_netG_output_interval == 0:
+                    with t.no_grad():
+                        fake = netG(fixed_noise).detach().cpu()
+                    wandb.log({
+                        "images": [
+                            wandb.Image(x,
+                                        caption="epoch: " + str(epoch) +
+                                        " iteration: " + str(i)) for x in fake
+                        ]
+                    })
 
             if max_epoch_duration is not None:
                 if time.time() - start_time > max_epoch_duration:

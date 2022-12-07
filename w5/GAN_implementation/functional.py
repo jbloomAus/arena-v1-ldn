@@ -126,6 +126,13 @@ def conv2d_minimal(x: t.Tensor, weights: t.Tensor) -> t.Tensor:
         (batch, in_channels, output_height, output_width, kernel_height, kernel_width),
         x_new_stride
     )
+
+    return einsum(
+        "batch in_channels output_height output_width kernel_height kernel_width, \
+out_channels in_channels kernel_height kernel_width \
+-> batch out_channels output_height output_width",
+        x_strided, weights
+    )
     
 def conv2d(x, weights, stride: IntOrPair = 1, padding: IntOrPair = 0) -> t.Tensor:
     '''Like torch's conv2d using bias=False
