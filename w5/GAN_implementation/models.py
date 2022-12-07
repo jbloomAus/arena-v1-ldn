@@ -1,10 +1,10 @@
 import torch as t
 import torch.nn as nn
-# from .layers import ConvTranspose2d
+
 from einops.layers.torch import Rearrange
 from collections import OrderedDict
-# from GAN_implementation.layers import Conv2d, ConvTranspose2d
-from torch.nn import Conv2d, ConvTranspose2d
+from GAN_implementation.layers import Conv2d, ConvTranspose2d
+
 class Generator(nn.Module):
 
     def __init__(
@@ -41,7 +41,6 @@ class Generator(nn.Module):
                 kernel_size = 4,
                 stride = 2,
                 padding = 1,
-                bias=   False,
             )
 
         # use an nn.Sequential to stack the layers
@@ -96,7 +95,7 @@ class Discriminator(nn.Module):
                 [
                     ("conv", get_layer_i(i)),
                     ("bn", nn.BatchNorm2d(self.generator_num_features//(2**(self.n_layers-i-1))) if i != 0 else nn.Identity()),
-                    ("relu", nn.LeakyReLU(0.2)),
+                    ("relu", nn.LeakyReLU(0.2) if i != 0 else nn.Identity()) ,
                 ]
             ))
             self.layers.append(layer)

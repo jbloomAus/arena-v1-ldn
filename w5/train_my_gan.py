@@ -50,7 +50,7 @@ if __name__ == "__main__":
         args.img_channels,
         args.hidden_dim,
         args.n_layers
-    )
+    ).to(args.device)
 
     initialize_weights_generator(my_Generator)
     
@@ -59,18 +59,18 @@ if __name__ == "__main__":
         args.img_channels,
         args.hidden_dim,
         args.n_layers
-    )
+    ).to(args.device)
 
     initialize_weights_discriminator(my_Discriminator)
+
+    # # check init means and variance
+    # for name, param in my_Generator.named_parameters():
+    #     if param.requires_grad:
+    #         print(f"Generator    : {name:35} {param.data.mean(): 3.2f} {param.data.std(): 3.6f}")
     
-    # check init means and variance
-    for name, param in my_Generator.named_parameters():
-        if param.requires_grad:
-            print(f"Generator    : {name:35} {param.data.mean(): 3.2f} {param.data.std(): 3.6f}")
-    
-    for name, param in my_Discriminator.named_parameters():
-        if param.requires_grad:
-            print(f"Discriminator: {name:35} {param.data.mean(): 3.2f} {param.data.std(): 3.6f}")
+    # for name, param in my_Discriminator.named_parameters():
+    #     if param.requires_grad:
+    #         print(f"Discriminator: {name:35} {param.data.mean(): 3.2f} {param.data.std(): 3.6f}")
 
     betas = (args.beta1, args.beta2)
     discriminator_optimizer = optim.Adam(my_Discriminator.parameters(), lr=args.lr, betas=betas)
