@@ -85,9 +85,6 @@ def train_vae(
             if max_epoch_duration is not None:
                 if time.time() - start_time > max_epoch_duration:
                     break
-            
-        # 4. Save model checkpoints
-        t.save(autoencoder.state_dict(), "mnist_autoencoder.pth")
 
         print("Training complete")
 

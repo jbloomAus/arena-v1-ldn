@@ -1,6 +1,7 @@
 import uuid
 import argparse
 import wandb
+import torch as t
 from torch import optim
 from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST
@@ -59,5 +60,8 @@ if __name__ == "__main__":
         use_wandb=args.use_wandb,
         device=args.device)
     
+    # save model 
+    t.save(model.state_dict(), f"VAE_implementation_{name}_{args.latent_dim_size}.pth")
+
     if args.use_wandb:
         wandb.finish()
