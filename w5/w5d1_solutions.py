@@ -30,7 +30,9 @@ import w5d1_utils
 import w5d1_tests
 
 from GAN_implementation.functional import pad1d, pad2d, conv1d_minimal, conv2d_minimal
-from torch.nn import Linear, ReLU, Sequential, Conv2d, BatchNorm2d, ConvTranspose2d
+from torch.nn import Linear, ReLU, Sequential, BatchNorm2d #å ConvTranspose2d, Conv2d
+from GAN_implementation.layers import Conv2d, ConvTranspose2d
+
 
 MAIN = __name__ == "__main__"
 
@@ -271,7 +273,7 @@ class Generator(nn.Module):
         self.project_and_reshape = Sequential(
             Linear(latent_dim_size, first_size, bias=False),
             Rearrange("b (ic h w) -> b ic h w", h=first_height, w=first_height),
-            BatchNorm2d(generator_num_features),
+            nn.BatchNorm2d(generator_num_features),
             ReLU(),
         )
 
@@ -285,7 +287,7 @@ class Generator(nn.Module):
         for i, (ci, co) in enumerate(zip(in_channels_list, out_channels_list)):
             conv_layer = [ConvTranspose2d(ci, co, 4, 2, 1), ReLU() if i < n_layers - 1 else Tanh()]
             if i < n_layers - 1:
-                conv_layer.insert(1, BatchNorm2d(co))
+                conv_layer.insert(1, nn.BatchNorm2d(co))
             conv_layer_list.append(Sequential(*conv_layer))
         
         self.layers = Sequential(*conv_layer_list)
@@ -411,7 +413,7 @@ if MAIN:
     ])
 
     trainset = datasets.ImageFolder(
-        root=r"celeba",
+        root=r"img_align_celeba",
         transform=transform
     )
 
@@ -448,7 +450,7 @@ class DCGANargs():
     lr: float = 0.0002
     betas: Tuple[float] = (0.5, 0.999)
     track: bool = True
-    cuda: bool = True
+    cuda: bool = False
     seconds_between_image_logs: int = 40
 
 def train_DCGAN(args: DCGANargs) -> DCGAN:
@@ -550,6 +552,7 @@ if MAIN:
     model = DCGAN(**celeba_config).to(device).train()
     # print_param_count(model)
     x = t.randn(3, 100).to(device)
+    output = model.netG(x)
     statsG = torchinfo.summary(model.netG, input_data=x)
     statsD = torchinfo.summary(model.netD, input_data=model.netG(x))
     print(statsG, statsD)

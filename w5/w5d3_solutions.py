@@ -22,11 +22,11 @@ from fancy_einsum import einsum
 
 MAIN = __name__ == "__main__"
 
-from w0d2.solutions import Linear, conv2d, force_pair, IntOrPair
-from w0d3.solutions import Sequential
-from w2d2.solutions_own_transformer import GELU, PositionalEncoding
-from w4d1.solutions import ConvTranspose2d
-from w5d1 import utils
+# from w0d2.solutions import Linear, conv2d, force_pair, IntOrPair
+# from w0d3.solutions import Sequential
+# from w2d2.solutions_own_transformer import GELU, PositionalEncoding
+# from w4d1.solutions import ConvTranspose2d
+# from w5d1 import utils
 
 device = t.device("cuda:0") if t.cuda.is_available() else t.device("cpu")
 
@@ -217,7 +217,7 @@ class NoiseSchedule(nn.Module):
 
 def noise_img(
     img: t.Tensor, noise_schedule: NoiseSchedule, max_steps: Optional[int] = None
-) -> IntOrPair:
+):
     '''
     Adds a uniform random number of steps of noise to each image in img.
 
@@ -545,7 +545,7 @@ if MAIN:
 
 class Conv2d(nn.Module):
     def __init__(
-        self, in_channels: int, out_channels: int, kernel_size: IntOrPair, stride: IntOrPair = 1, padding: IntOrPair = 0, bias: bool = True
+        self, in_channels: int, out_channels: int, kernel_size, stride = 1, padding = 0, bias: bool = True
     ):
         """
         Same as torch.nn.Conv2d with bias=False.
