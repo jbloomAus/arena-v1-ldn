@@ -208,7 +208,7 @@ if MAIN:
 def get_post_final_ln_dir(model: ParenTransformer) -> t.Tensor:
     return model.decoder.weight[0] - model.decoder.weight[1]
 
-get_post_final_ln_dir(model)
+# get_post_final_ln_dir(model)
 # %%
 
 def get_inputs(model: ParenTransformer, data: DataSet, module: nn.Module) -> t.Tensor:
@@ -339,7 +339,7 @@ def get_out_by_components(model: ParenTransformer, data: DataSet) -> t.Tensor:
 
     return t.stack(out, dim=0)
 
-data_mini = data[:500]
+# data_mini = data[:500]
 
 # if MAIN:
 #     w5d5_tests.test_get_out_by_component(get_out_by_components, model, data_mini)
