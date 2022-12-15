@@ -2,8 +2,12 @@ import os
 import pickle
 import torch
 import json
+import string
 
 from transformer_lens import EasyTransformerConfig
+
+from .model import Classifier
+from .dataset import PalindromeDataset
 
 def save_classifier(model_path, classifier, tokenizer, cfg):
 
@@ -42,4 +46,25 @@ def save_checkpoint(model_path, classifier, tokenizer,cfg, num_examples):
     
     checkpoint_path = os.path.join(model_path, f"checkpoint.{num_examples}")
     
+    if not os.path.exists(checkpoint_path):
+        os.makedirs(checkpoint_path)
+
     save_classifier(checkpoint_path, classifier, tokenizer, cfg)
+
+
+def load_from_model(path, analysis_data_set_size = 1000):
+
+    classifier_state, tokenizer, cfg = load_classifier(path)
+
+    # # make classifer
+    classifier = Classifier(cfg)
+    classifier.load_state_dict(classifier_state)
+
+    # make compatible dataset
+    k = cfg.n_ctx // 2
+    alphabet = string.ascii_lowercase[:tokenizer.vocab_size]
+
+    test_dataset = PalindromeDataset(analysis_data_set_size, k = k, perturb_n_times=8, alphabet=alphabet)
+    # test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+
+    return classifier, test_dataset, tokenizer
