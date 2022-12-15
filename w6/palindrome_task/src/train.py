@@ -15,6 +15,7 @@ def train(classifier,
            tokenizer: ToyTokenizer,
            total_examples: int = 4 * 10**6,
            device: str = 'cpu',
+           test_interval: int = 1000,
            wandb: wandb = None):
 
     if wandb is not None:
@@ -40,7 +41,7 @@ def train(classifier,
         if wandb is not None:
             wandb.log({"loss": loss.item()})
 
-        if i % 1000 == 0:
+        if i % test_interval == 0:
             accuracy = test(classifier, test_loader, tokenizer, device)
             if wandb is not None:
                 wandb.log({"accuracy": accuracy})

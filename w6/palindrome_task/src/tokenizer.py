@@ -103,9 +103,9 @@ class ToyTokenizer(PreTrainedTokenizerFast):
         tokenizer_raw = Tokenizer(models.Unigram([(char, 0) for char in vocab]))
         tokenizer_raw.add_special_tokens(list(special_tokens.values()))
         tokenizer_raw.post_processor = processors.TemplateProcessing(
-            single="[CLS] $A [SEP]",
-            pair="[CLS] $A [SEP] $B:1 [SEP]:1",
-            special_tokens=[(k, v) for k, v in tokenizer_raw.get_vocab().items() if k in ["[CLS]", "[SEP]"]],
+            single="$A [SEP]",
+            pair="$A [SEP] $B:1 [SEP]:1",
+            special_tokens=[(k, v) for k, v in tokenizer_raw.get_vocab().items() if k in ["[SEP]"]],
         )
 
         self.tokenizer = tokenizer_raw
